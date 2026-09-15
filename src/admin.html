@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>候補系統管理</title>
+  <?!= include('styles'); ?>
+</head>
+<body>
+  <div id="boot-view" class="loading">載入中…</div>
+
+  <div id="login-view" class="hidden">
+    <div class="login-panel card">
+      <h2>Admin 登入</h2>
+      <div id="login-alert" class="alert alert-error hidden"></div>
+      <div class="field">
+        <label for="operator-name">操作者姓名</label>
+        <input id="operator-name" type="text" placeholder="2～30 字">
+      </div>
+      <div class="field">
+        <label for="admin-pin">ADMIN PIN</label>
+        <input id="admin-pin" type="password" inputmode="numeric" maxlength="8">
+      </div>
+      <button class="btn btn-primary" id="btn-login" style="width:100%">登入</button>
+    </div>
+  </div>
+
+  <div id="app-view" class="hidden">
+  <div class="container">
+    <div class="admin-header">
+      <div>
+        <h1>候補系統 ADMIN</h1>
+        <p class="muted" id="user-info"></p>
+      </div>
+      <div class="admin-header-actions">
+        <button class="btn btn-secondary" id="btn-logout">登出</button>
+      </div>
+    </div>
+
+    <div class="card loading" id="dashboard-loading">載入場次資料…</div>
+
+    <div class="card hidden" id="create-section">
+      <h2>建立新場次</h2>
+      <p class="muted">輸入本次比賽名稱即可開始；名稱可自由設定，例如「BUC Cup 2026｜第 1 場」。</p>
+      <div class="grid-2">
+        <div class="field">
+          <label for="new-event-name">活動名稱 *</label>
+          <input id="new-event-name" type="text" placeholder="例：BUC Cup 2026">
+        </div>
+        <div class="field">
+          <label for="new-session-name">場次名稱</label>
+          <input id="new-session-name" type="text" placeholder="例：第 1 場">
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-create-event">建立並開始</button>
+    </div>
+
+    <div id="manage-section" class="hidden">
+    <p class="muted" id="current-event-label"></p>
+    <p class="muted" id="admin-urls"></p>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="registration">候補管理</button>
+      <button class="tab" data-tab="lottery">抽選管理</button>
+      <button class="tab" data-tab="display">顯示設定</button>
+      <button class="tab" data-tab="system">系統設定</button>
+      <button class="tab" data-tab="data">資料管理</button>
+    </div>
+
+    <div id="panel-registration" class="card">
+      <h2>候補管理</h2>
+      <p>候補狀態：<strong id="reg-status">-</strong>｜QR 顯示：<strong id="qr-status">-</strong>｜人數：<strong id="reg-count">0</strong></p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin:16px 0;">
+        <button class="btn btn-primary" data-quick="OPEN">開放候補</button>
+        <button class="btn btn-secondary" data-quick="PROCESSING">停止新增</button>
+        <button class="btn btn-danger" data-quick="CLOSED">結束候補</button>
+      </div>
+      <table class="table">
+        <thead><tr><th>序號</th><th>姓名</th><th>電話</th><th>時間</th><th>提示</th></tr></thead>
+        <tbody id="waitlist-body"></tbody>
+      </table>
+    </div>
+
+    <div id="panel-lottery" class="card hidden">
+      <h2>抽選管理</h2>
+      <div class="field">
+        <label>首輪公布人數</label>
+        <input id="first-batch-count" type="number" min="1" value="60">
+      </div>
+      <button class="btn btn-primary" id="btn-run-lottery">開始抽選</button>
+      <hr style="border-color:var(--border);margin:20px 0;">
+      <div class="field">
+        <label>追加公布人數</label>
+        <input id="next-batch-count" type="number" min="1" value="8">
+      </div>
+      <button class="btn btn-secondary" id="btn-add-batch">建立下一批</button>
+      <div id="batch-list" style="margin-top:16px;"></div>
+    </div>
+
+    <div id="panel-display" class="card hidden">
+      <h2>顯示設定</h2>
+      <div class="grid-2">
+        <div class="field"><label>活動名稱</label><input id="set-event-name"></div>
+        <div class="field"><label>場次名稱</label><input id="set-session-name"></div>
+        <div class="field"><label>截止時間</label><input id="set-deadline" placeholder="14:30"></div>
+        <div class="field"><label>主標語</label><input id="set-display-title"></div>
+        <div class="field"><label>補充說明</label><textarea id="set-display-subtitle" rows="3"></textarea></div>
+      </div>
+      <button class="btn btn-primary" id="btn-save-display">儲存顯示設定</button>
+    </div>
+
+    <div id="panel-system" class="card hidden">
+      <h2>系統設定</h2>
+      <div class="field">
+        <label>登記模式</label>
+        <select id="set-mode">
+          <option value="general">一般模式</option>
+          <option value="counter">櫃檯核驗模式</option>
+        </select>
+      </div>
+      <details>
+        <summary>展開進階設定</summary>
+        <div class="grid-2" style="margin-top:16px;">
+          <div class="field"><label>QR Rotation</label><select id="set-qr-rotation"><option value="true">ON</option><option value="false">OFF</option></select></div>
+          <div class="field"><label>輪換間隔（秒）</label><input id="set-qr-interval" type="number"></div>
+          <div class="field"><label>Token TTL（秒）</label><input id="set-token-ttl" type="number"></div>
+          <div class="field"><label>填表有效時間（秒）</label><input id="set-form-ttl" type="number"></div>
+          <div class="field"><label>Staff PIN（留空則不修改）</label><input id="set-staff-pin" type="password"></div>
+        </div>
+      </details>
+      <button class="btn btn-primary" id="btn-save-system" style="margin-top:16px;">儲存系統設定</button>
+    </div>
+
+    <div id="panel-data" class="card hidden">
+      <h2>資料管理</h2>
+      <p class="muted">匯出檔名會包含目前活動名稱。結束現場後請使用「結束並封存」：系統會先備份整份試算表，再清空工作資料。</p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <button class="btn btn-secondary" data-export="waitlist">匯出候補</button>
+        <button class="btn btn-secondary" data-export="lottery">匯出抽選</button>
+        <button class="btn btn-secondary" data-export="full">匯出完整資料</button>
+        <button class="btn btn-danger" id="btn-archive">結束並封存</button>
+      </div>
+      <p id="data-message" class="muted" style="margin-top:12px;"></p>
+    </div>
+    </div>
+  </div>
+  </div>
+
+  <?!= include('client-utils'); ?>
+  <script>
+    const ADMIN_TOKEN_KEY = 'waitlist_admin_session_token';
+    const UI = window.WaitlistUI;
+    const SOURCE_ID_KEY = 'waitlist_source_id';
+    let dashboard = null;
+    let session = null;
+    let dashboardReady = false;
+
+    function getAdminToken() {
+      return localStorage.getItem(ADMIN_TOKEN_KEY) || '';
+    }
+
+    function setAdminToken(token) {
+      if (token) localStorage.setItem(ADMIN_TOKEN_KEY, token);
+      else localStorage.removeItem(ADMIN_TOKEN_KEY);
+    }
+
+    function getSourceId() {
+      let id = localStorage.getItem(SOURCE_ID_KEY);
+      if (!id) {
+        id = 'src_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+        localStorage.setItem(SOURCE_ID_KEY, id);
+      }
+      return id;
+    }
+
+    function showLoginAlert(message) {
+      const el = document.getElementById('login-alert');
+      el.textContent = message;
+      el.classList.remove('hidden');
+    }
+
+    function hideLoginAlert() {
+      document.getElementById('login-alert').classList.add('hidden');
+    }
+
+    function hideBoot() {
+      document.getElementById('boot-view').classList.add('hidden');
+    }
+
+    function showLogin() {
+      hideBoot();
+      document.getElementById('app-view').classList.add('hidden');
+      document.getElementById('login-view').classList.remove('hidden');
+    }
+
+    function showApp() {
+      hideBoot();
+      document.getElementById('login-view').classList.add('hidden');
+      document.getElementById('app-view').classList.remove('hidden');
+      document.getElementById('user-info').textContent =
+        session ? (session.operator + '｜' + session.role) : '';
+      showDashboardLoading();
+    }
+
+    function showDashboardLoading() {
+      document.getElementById('dashboard-loading').classList.remove('hidden');
+      document.getElementById('create-section').classList.add('hidden');
+      document.getElementById('manage-section').classList.add('hidden');
+    }
+
+    function hideDashboardLoading() {
+      document.getElementById('dashboard-loading').classList.add('hidden');
+    }
+
+    function forceRelogin(message) {
+      setAdminToken('');
+      session = null;
+      dashboard = null;
+      dashboardReady = false;
+      showLogin();
+      if (message) showLoginAlert(message);
+    }
+
+    function post(action, body) {
+      const payload = Object.assign({}, body || {});
+      if (action.indexOf('admin.') === 0 && action !== 'admin.login') {
+        payload.token = getAdminToken();
+      }
+      return new Promise(function (resolve, reject) {
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (res && res.error &&
+                (res.error.code === 'SESSION_EXPIRED' || res.error.code === 'FORBIDDEN')) {
+              forceRelogin(res.error.message || 'Session 已失效，請重新登入');
+            }
+            resolve(res);
+          })
+          .withFailureHandler(function (err) {
+            reject(err);
+          })
+          .apiCall(action, payload);
+      });
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll('.tab').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+      ['registration', 'lottery', 'display', 'system', 'data'].forEach(name => {
+        document.getElementById('panel-' + name).classList.toggle('hidden', name !== tab);
+      });
+    }
+
+    document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+
+    async function loadDashboard() {
+      if (!dashboardReady) {
+        showDashboardLoading();
+      }
+      const res = await post('admin.getDashboard');
+      if (!res.ok) {
+        hideDashboardLoading();
+        if (res.error && res.error.code !== 'SESSION_EXPIRED') {
+          alert(res.error.message || '載入失敗');
+        }
+        return;
+      }
+      dashboard = res.data;
+      dashboardReady = true;
+      renderDashboard();
+    }
+
+    function showCreateOnly() {
+      document.getElementById('create-section').classList.remove('hidden');
+      document.getElementById('manage-section').classList.add('hidden');
+      document.getElementById('new-event-name').value = '';
+      document.getElementById('new-session-name').value = '';
+    }
+
+    function showManage() {
+      document.getElementById('create-section').classList.add('hidden');
+      document.getElementById('manage-section').classList.remove('hidden');
+    }
+
+    function renderDashboard() {
+      hideDashboardLoading();
+      const s = dashboard.settings;
+      if (!dashboard.has_active_event) {
+        showCreateOnly();
+        return;
+      }
+      showManage();
+
+      const label = [s.event_name, s.session_name].filter(Boolean).join('｜');
+      document.getElementById('current-event-label').textContent = '目前場次：' + (label || '-');
+
+      document.getElementById('reg-status').textContent = s.registration_enabled ? '開放' : '關閉';
+      document.getElementById('qr-status').textContent = s.qr_visible ? '顯示' : '隱藏';
+      document.getElementById('reg-count').textContent = dashboard.waitlist_count;
+      document.getElementById('admin-urls').innerHTML =
+        'Display: <a href="' + dashboard.urls.display + '" target="_blank">開啟</a>｜' +
+        'Candidate: <a href="' + dashboard.urls.candidate + '" target="_blank">開啟</a>';
+
+      const tbody = document.getElementById('waitlist-body');
+      tbody.innerHTML = '';
+      dashboard.waitlist.forEach(row => {
+        const tr = document.createElement('tr');
+        const flags = (row.duplicate_flags || '').split(',').filter(Boolean).map(f => {
+          const cls = f === 'same_phone' || f === 'same_name' ? 'badge-warn' : 'badge-ok';
+          const label = f === 'same_phone' ? '相同電話' : f === 'same_name' ? '同名' : f;
+          return '<span class="badge ' + cls + '">' + label + '</span>';
+        }).join(' ');
+        tr.innerHTML = '<td>' + row.waitlist_no + '</td><td>' + row.name + '</td><td>' + row.phone_masked + '</td><td>' + row.registered_at + '</td><td>' + flags + '</td>';
+        tbody.appendChild(tr);
+      });
+
+      document.getElementById('set-event-name').value = s.event_name || '';
+      document.getElementById('set-session-name').value = s.session_name || '';
+      document.getElementById('set-deadline').value = s.deadline || '';
+      document.getElementById('set-display-title').value = s.display_title || '';
+      document.getElementById('set-display-subtitle').value = s.display_subtitle || '';
+      document.getElementById('set-mode').value = s.mode || 'general';
+      document.getElementById('set-qr-rotation').value = String(!!s.qr_rotation);
+      document.getElementById('set-qr-interval').value = s.qr_rotation_interval || 20;
+      document.getElementById('set-token-ttl').value = s.token_ttl || 40;
+      document.getElementById('set-form-ttl').value = s.form_session_ttl || 90;
+      document.getElementById('first-batch-count').value = s.lottery_first_batch_count || 60;
+
+      const batchList = document.getElementById('batch-list');
+      batchList.innerHTML = '';
+      (dashboard.publish_batches || []).forEach(batch => {
+        const div = document.createElement('div');
+        div.style.marginBottom = '8px';
+        div.innerHTML = 'Batch ' + batch.batch_no + '：rank ' + batch.rank_start + '-' + batch.rank_end +
+          '（' + batch.display_title + '）' +
+          ' <button class="btn btn-secondary" data-batch="' + batch.batch_id + '">顯示到 Display</button>';
+        batchList.appendChild(div);
+      });
+      batchList.querySelectorAll('[data-batch]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          UI.runWithLoading(btn, '切換中…', async () => {
+            await post('admin.setDisplayedBatch', { batch_id: btn.dataset.batch });
+            alert('已切換 Display 批次');
+          });
+        });
+      });
+    }
+
+    document.querySelectorAll('[data-quick]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.disabled) return;
+        if (!confirm('確定要切換為「' + btn.textContent.trim() + '」？')) return;
+        UI.runWithLoading(btn, '切換中…', async () => {
+          await post('admin.setQuickState', { state: btn.dataset.quick });
+          await loadDashboard();
+        });
+      });
+    });
+
+    document.getElementById('btn-run-lottery').addEventListener('click', () => {
+      const btn = document.getElementById('btn-run-lottery');
+      if (btn.disabled) return;
+      if (!confirm('確定執行首次抽選？此操作不可直接重抽。')) return;
+      UI.runWithLoading(btn, '抽選中…', async () => {
+        const count = Number(document.getElementById('first-batch-count').value);
+        const res = await post('admin.runInitialLottery', { first_batch_count: count });
+        alert(res.ok ? '抽選完成' : (res.error?.message || '失敗'));
+        await loadDashboard();
+      });
+    });
+
+    document.getElementById('btn-add-batch').addEventListener('click', () => {
+      const btn = document.getElementById('btn-add-batch');
+      if (btn.disabled) return;
+      UI.runWithLoading(btn, '建立中…', async () => {
+        const count = Number(document.getElementById('next-batch-count').value);
+        const res = await post('admin.createPublishBatch', { count });
+        alert(res.ok ? '已建立下一批' : (res.error?.message || '失敗'));
+        await loadDashboard();
+      });
+    });
+
+    document.getElementById('btn-save-display').addEventListener('click', () => {
+      const btn = document.getElementById('btn-save-display');
+      if (btn.disabled) return;
+      UI.runWithLoading(btn, '儲存中…', async () => {
+        await post('admin.updateSettings', { settings: {
+          event_name: document.getElementById('set-event-name').value,
+          session_name: document.getElementById('set-session-name').value,
+          deadline: document.getElementById('set-deadline').value,
+          display_title: document.getElementById('set-display-title').value,
+          display_subtitle: document.getElementById('set-display-subtitle').value
+        }});
+        await loadDashboard();
+        alert('已儲存');
+      });
+    });
+
+    document.getElementById('btn-save-system').addEventListener('click', () => {
+      const btn = document.getElementById('btn-save-system');
+      if (btn.disabled) return;
+      UI.runWithLoading(btn, '儲存中…', async () => {
+        const settings = {
+          mode: document.getElementById('set-mode').value,
+          qr_rotation: document.getElementById('set-qr-rotation').value === 'true',
+          qr_rotation_interval: Number(document.getElementById('set-qr-interval').value),
+          token_ttl: Number(document.getElementById('set-token-ttl').value),
+          form_session_ttl: Number(document.getElementById('set-form-ttl').value),
+          lottery_first_batch_count: Number(document.getElementById('first-batch-count').value)
+        };
+        const pin = document.getElementById('set-staff-pin').value;
+        if (pin) settings.staff_pin = pin;
+        await post('admin.updateSettings', { settings });
+        await loadDashboard();
+        alert('已儲存');
+      });
+    });
+
+    document.querySelectorAll('[data-export]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.disabled) return;
+        UI.runWithLoading(btn, '匯出中…', async () => {
+          const res = await post('admin.export', { type: btn.dataset.export });
+          if (res.ok) {
+            document.getElementById('data-message').innerHTML = '匯出完成：<a href="' + res.data.spreadsheet_url + '" target="_blank">開啟試算表</a>';
+          } else {
+            alert(res.error?.message || '匯出失敗');
+          }
+        });
+      });
+    });
+
+    document.getElementById('btn-create-event').addEventListener('click', () => {
+      const btn = document.getElementById('btn-create-event');
+      if (btn.disabled) return;
+      const eventName = document.getElementById('new-event-name').value.trim();
+      const sessionName = document.getElementById('new-session-name').value.trim();
+      if (!eventName) {
+        alert('請輸入活動名稱');
+        return;
+      }
+      UI.runWithLoading(btn, '建立中…', async () => {
+        const res = await post('admin.createEvent', {
+          event_name: eventName,
+          session_name: sessionName
+        });
+        if (!res.ok) {
+          alert(res.error?.message || '建立失敗');
+          return;
+        }
+        await loadDashboard();
+      });
+    });
+
+    document.getElementById('btn-archive').addEventListener('click', () => {
+      const btn = document.getElementById('btn-archive');
+      if (btn.disabled) return;
+      if (!confirm(
+        '確定結束並封存本場次？\n\n' +
+        '系統將先複製整份試算表作為備份，然後刪除工作試算表中的候補／抽選／稽核資料，' +
+        '並回到建立新場次畫面。此操作無法復原（僅備份檔保留資料）。'
+      )) return;
+      UI.runWithLoading(btn, '封存中…', async () => {
+        const res = await post('admin.archiveEvent');
+        if (!res.ok) {
+          alert(res.error?.message || '封存失敗');
+          return;
+        }
+        if (res.data?.export_url) {
+          try { window.open(res.data.export_url, '_blank'); } catch (e) { /* popup blocked */ }
+        }
+        let msg = '場次已備份並清空工作資料';
+        if (res.data?.export_name) msg += '。備份：' + res.data.export_name;
+        document.getElementById('data-message').textContent = msg;
+        await loadDashboard();
+      });
+    });
+
+    async function doLogin() {
+      const btn = document.getElementById('btn-login');
+      if (btn.disabled) return;
+      UI.setButtonLoading(btn, true, '登入中…');
+      try {
+        const res = await post('admin.login', {
+          pin: document.getElementById('admin-pin').value,
+          operator_name: document.getElementById('operator-name').value,
+          source_id: getSourceId()
+        });
+        if (!res || !res.ok) {
+          showLoginAlert((res && res.error && res.error.message) || '登入失敗');
+          return;
+        }
+        setAdminToken(res.data.token);
+        session = {
+          role: res.data.role,
+          operator: res.data.operator,
+          expiresAt: res.data.expiresAt
+        };
+        hideLoginAlert();
+        showApp();
+        await loadDashboard();
+      } catch (err) {
+        showLoginAlert((err && err.message) || '無法連線伺服器，請確認已部署 Web App 並重新整理');
+      } finally {
+        UI.setButtonLoading(btn, false);
+      }
+    }
+
+    async function doLogout() {
+      await post('admin.logout', { token: getAdminToken() });
+      setAdminToken('');
+      session = null;
+      location.reload();
+    }
+
+    async function bootApp() {
+      try {
+        const token = getAdminToken();
+        if (!token) {
+          showLogin();
+          return;
+        }
+
+        const res = await post('admin.checkSession', { token });
+        if (!res || !res.ok || !res.data.session) {
+          setAdminToken('');
+          showLogin();
+          if (res && res.error && res.error.message) showLoginAlert(res.error.message);
+          return;
+        }
+
+        session = res.data.session;
+        showApp();
+        await loadDashboard();
+      } catch (err) {
+        showLogin();
+        showLoginAlert((err && err.message) || '無法連線伺服器，請確認已部署 Web App');
+      }
+    }
+
+    document.getElementById('btn-login').addEventListener('click', doLogin);
+    document.getElementById('btn-logout').addEventListener('click', doLogout);
+    document.getElementById('admin-pin').addEventListener('keydown', e => {
+      if (e.key === 'Enter') doLogin();
+    });
+    document.getElementById('operator-name').addEventListener('keydown', e => {
+      if (e.key === 'Enter') doLogin();
+    });
+
+    bootApp();
+  </script>
+</body>
+</html>

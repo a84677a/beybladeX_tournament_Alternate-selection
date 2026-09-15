@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>候補登記</title>
+  <?!= include('styles'); ?>
+</head>
+<body>
+  <div class="container" id="app">
+    <div id="screen-form" class="card">
+      <h1>候補登記</h1>
+      <p id="deadline-info" class="muted"></p>
+      <div class="field">
+        <label for="name">真實姓名</label>
+        <input id="name" type="text" autocomplete="name" placeholder="王小明">
+      </div>
+      <div class="field">
+        <label for="phone">手機號碼</label>
+        <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="0912345678">
+      </div>
+      <button class="btn btn-primary" id="btn-confirm" style="width:100%">確認資料</button>
+      <p id="form-error" class="muted" style="color:#f87171;margin-top:12px;"></p>
+    </div>
+
+    <div id="screen-review" class="card hidden">
+      <h2>請確認以下資料</h2>
+      <p>姓名：<strong id="review-name"></strong></p>
+      <p>電話：<strong id="review-phone"></strong></p>
+      <div style="display:flex;gap:12px;margin-top:20px;">
+        <button class="btn btn-secondary" id="btn-back" style="flex:1">返回修改</button>
+        <button class="btn btn-primary" id="btn-submit" style="flex:1">確認無誤</button>
+      </div>
+    </div>
+
+    <div id="screen-pin" class="warning-screen hidden">
+      <div class="container">
+        <div class="card">
+          <h2>🟧 候補資料已確認</h2>
+          <p>姓名：<strong id="pin-name"></strong></p>
+          <p>電話：<strong id="pin-phone"></strong></p>
+          <p class="muted">此資料已鎖定，無法修改。請將手機交由現場工作人員操作。</p>
+          <div class="field">
+            <label for="staff-pin">工作人員 PIN</label>
+            <input id="staff-pin" type="password" inputmode="numeric" maxlength="8" placeholder="••••">
+          </div>
+          <button class="btn btn-primary" id="btn-pin-submit" style="width:100%">完成候補登記</button>
+          <p id="pin-error" class="muted" style="color:#f87171;margin-top:12px;"></p>
+        </div>
+      </div>
+    </div>
+
+    <div id="screen-success" class="success-screen hidden">
+      <div class="success-card">
+        <h2>✓ 候補登記成功</h2>
+        <div class="success-no" id="success-no">#001</div>
+        <p id="success-name"></p>
+        <p id="success-phone"></p>
+        <p id="success-time" class="muted"></p>
+        <p class="muted">請截圖保存本畫面作為憑證</p>
+      </div>
+    </div>
+
+    <div id="screen-error" class="container hidden">
+      <div class="card">
+        <h2 id="error-title">無法完成登記</h2>
+        <p id="error-message" class="muted"></p>
+      </div>
+    </div>
+  </div>
+
+  <?!= include('client-utils'); ?>
+  <script>
+    const WEB_APP_URL = '<?= webAppUrl ?>';
+    const UI = window.WaitlistUI;
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    const receipt = params.get('receipt');
+
+    let formSessionId = '';
+    let mode = 'general';
+    let pending = null;
+    let requestId = crypto.randomUUID();
+
+    function post(action, body) {
+      return fetch(WEB_APP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ action }, body || {}))
+      }).then(r => r.json());
+    }
+
+    function show(id) {
+      ['screen-form', 'screen-review', 'screen-pin', 'screen-success', 'screen-error'].forEach(s => {
+        document.getElementById(s).classList.toggle('hidden', s !== id);
+      });
+    }
+
+    function showError(title, message) {
+      document.getElementById('error-title').textContent = title;
+      document.getElementById('error-message').textContent = message;
+      show('screen-error');
+    }
+
+    function showSuccess(data) {
+      document.getElementById('success-no').textContent = data.waitlist_no;
+      document.getElementById('success-name').textContent = data.name;
+      document.getElementById('success-phone').textContent = data.phone_masked;
+      document.getElementById('success-time').textContent = '登記時間 ' + formatTime(data.registered_at);
+      history.replaceState({}, '', WEB_APP_URL + '?page=candidate&receipt=' + encodeURIComponent(data.receipt_token));
+      show('screen-success');
+    }
+
+    function formatTime(value) {
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return String(value || '');
+      return d.toLocaleString('zh-TW', { hour12: false });
+    }
+
+    function validateForm() {
+      const name = document.getElementById('name').value.trim();
+      const phone = document.getElementById('phone').value.trim();
+      if (name.length < 2) throw new Error('請輸入有效的真實姓名');
+      if (!/^09\d{8}$/.test(phone.replace(/[\s\-()]/g, ''))) throw new Error('請輸入有效的手機號碼（09xxxxxxxx）');
+      return { name, phone: phone.replace(/[\s\-()]/g, '') };
+    }
+
+    async function initSession() {
+      if (receipt) {
+        const res = await post('getReceipt', { receipt_token: receipt });
+        if (res.ok) return showSuccess(res.data);
+        showError('找不到紀錄', res.error?.message || '憑證無效');
+        return;
+      }
+
+      if (!token) {
+        showError('缺少 QR Token', '請掃描現場 Display 上的 QR Code。');
+        return;
+      }
+
+      const res = await post('validateToken', { token });
+      if (!res.ok) {
+        showError('QR 已失效', res.error?.message || '請重新掃描');
+        return;
+      }
+
+      formSessionId = res.data.form_session_id;
+      mode = res.data.mode || 'general';
+      if (res.data.show_deadline && res.data.deadline) {
+        document.getElementById('deadline-info').textContent = '候補登記截止時間：' + res.data.deadline;
+      }
+    }
+
+    document.getElementById('btn-confirm').addEventListener('click', () => {
+      try {
+        pending = validateForm();
+        document.getElementById('review-name').textContent = pending.name;
+        document.getElementById('review-phone').textContent = pending.phone;
+        show('screen-review');
+      } catch (e) {
+        document.getElementById('form-error').textContent = e.message;
+      }
+    });
+
+    document.getElementById('btn-back').addEventListener('click', () => show('screen-form'));
+
+    document.getElementById('btn-submit').addEventListener('click', () => {
+      const btn = document.getElementById('btn-submit');
+      if (!pending || btn.disabled) return;
+      if (mode === 'counter') {
+        document.getElementById('pin-name').textContent = pending.name;
+        document.getElementById('pin-phone').textContent = pending.phone.slice(0, 4) + '***' + pending.phone.slice(-3);
+        show('screen-pin');
+        return;
+      }
+      UI.runWithLoading(btn, '登記中…', () => submitRegistration(null));
+    });
+
+    document.getElementById('btn-pin-submit').addEventListener('click', () => {
+      const btn = document.getElementById('btn-pin-submit');
+      if (btn.disabled) return;
+      const pin = document.getElementById('staff-pin').value;
+      UI.runWithLoading(btn, '登記中…', () => submitRegistration(pin));
+    });
+
+    async function submitRegistration(staffPin) {
+      const payload = {
+        request_id: requestId,
+        form_session_id: formSessionId,
+        name: pending.name,
+        phone: pending.phone
+      };
+      if (staffPin) payload.staff_pin = staffPin;
+
+      const action = mode === 'counter' ? 'verifyAndRegister' : 'register';
+      const res = await post(action, payload);
+
+      if (res.ok) {
+        showSuccess(res.data);
+        return;
+      }
+
+      if (res.error?.code === 'DUPLICATE' && res.error.waitlist_no) {
+        showSuccess(res.error);
+        return;
+      }
+
+      const msg = res.error?.message || '登記失敗';
+      if (mode === 'counter') {
+        document.getElementById('pin-error').textContent = msg;
+      } else {
+        showError('登記失敗', msg);
+      }
+    }
+
+    initSession();
+  </script>
+</body>
+</html>

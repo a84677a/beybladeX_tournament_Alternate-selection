@@ -1,0 +1,40 @@
+<script>
+  window.WaitlistUI = (function () {
+    function setButtonLoading(button, loading, loadingText) {
+      if (!button) return;
+      if (loading) {
+        if (button.disabled && button.classList.contains('is-loading')) return;
+        if (!button.dataset.originalHtml) {
+          button.dataset.originalHtml = button.innerHTML;
+        }
+        button.disabled = true;
+        button.classList.add('is-loading');
+        button.innerHTML =
+          '<span class="btn-spinner" aria-hidden="true"></span>' +
+          (loadingText || '處理中…');
+      } else {
+        button.disabled = false;
+        button.classList.remove('is-loading');
+        if (button.dataset.originalHtml) {
+          button.innerHTML = button.dataset.originalHtml;
+          delete button.dataset.originalHtml;
+        }
+      }
+    }
+
+    function runWithLoading(button, loadingText, task) {
+      if (!button || button.disabled) return Promise.resolve();
+      setButtonLoading(button, true, loadingText);
+      return Promise.resolve()
+        .then(task)
+        .finally(function () {
+          setButtonLoading(button, false);
+        });
+    }
+
+    return {
+      setButtonLoading: setButtonLoading,
+      runWithLoading: runWithLoading
+    };
+  })();
+</script>
