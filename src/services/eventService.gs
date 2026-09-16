@@ -48,6 +48,8 @@ function purgeCurrentEventData_() {
     waitlistSheet.deleteRows(2, lastRow - 1);
   }
   invalidateWaitlistCountCache_();
+  invalidateWaitlistIndex_();
+  invalidatePublicStateCache_();
   clearLotteryData_();
 
   var auditSheet = getSpreadsheet_().getSheetByName(CONFIG.SHEETS.AUDIT_LOG);

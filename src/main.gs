@@ -53,6 +53,8 @@ function dispatchAction_(action, body) {
       return createFormSession_(body.token);
     case 'extendFormSession':
       return extendFormSession_(body.form_session_id);
+    case 'lockForPinVerification':
+      return lockForPinVerification_(body.form_session_id, body.name, body.phone);
     case 'register':
       return registerCandidate_(body);
     case 'verifyAndRegister':

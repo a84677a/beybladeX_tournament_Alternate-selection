@@ -18,7 +18,9 @@ var CONFIG = {
     QR_ROTATION: true,
     QR_ROTATION_INTERVAL: 20,
     TOKEN_TTL: 40,
-    FORM_SESSION_TTL: 90,
+    FORM_SESSION_TTL: 70,
+    /** 櫃檯 PIN 階段 Cache 上限（CacheService 最長 21600 秒） */
+    PIN_SESSION_TTL: 21600,
     PIN_MAX_ATTEMPTS: 3,
     PIN_LOCKOUT_SECONDS: 30,
     AUTO_CLOSE: false,
@@ -29,7 +31,14 @@ var CONFIG = {
   },
 
   LOCK_TIMEOUT_MS: 30000,
-  CACHE_PREFIX: 'waitlist_'
+  CACHE_PREFIX: 'waitlist_',
+  CACHE_TTL: {
+    SETTINGS: 15,
+    WAITLIST_COUNT: 15,
+    WAITLIST_INDEX: 15,
+    PUBLIC_STATE: 8,
+    LOTTERY_DISPLAY: 3600
+  }
 };
 
 var SETTINGS_KEYS = [

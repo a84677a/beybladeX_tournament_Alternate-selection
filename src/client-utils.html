@@ -32,9 +32,50 @@
         });
     }
 
+    function sleep(ms) {
+      return new Promise(function (resolve) {
+        setTimeout(resolve, ms);
+      });
+    }
+
+    function isRetryableRegisterError(res) {
+      if (!res || res.ok) return false;
+      var code = res.error && res.error.code;
+      if (code === 'DUPLICATE' || code === 'SESSION_EXPIRED' ||
+        code === 'REGISTRATION_CLOSED' || code === 'CAPACITY_FULL' ||
+        code === 'INVALID_NAME' || code === 'INVALID_PHONE' ||
+        code === 'PIN_INVALID' || code === 'PIN_LOCKED') {
+        return false;
+      }
+      return code === 'BUSY' || code === 'INTERNAL_ERROR';
+    }
+
+    function postWithRetry(postFn, action, payload, maxRetries) {
+      maxRetries = maxRetries || 3;
+      return (function attempt(tryNo) {
+        return Promise.resolve(postFn(action, payload)).then(function (res) {
+          if (res.ok || !isRetryableRegisterError(res) || tryNo >= maxRetries - 1) {
+            return res;
+          }
+          var delay = 2000 * (tryNo + 1) + Math.random() * 1000;
+          return sleep(delay).then(function () {
+            return attempt(tryNo + 1);
+          });
+        }).catch(function (err) {
+          if (tryNo >= maxRetries - 1) throw err;
+          var delay = 2000 * (tryNo + 1) + Math.random() * 1000;
+          return sleep(delay).then(function () {
+            return attempt(tryNo + 1);
+          });
+        });
+      })(0);
+    }
+
     return {
       setButtonLoading: setButtonLoading,
-      runWithLoading: runWithLoading
+      runWithLoading: runWithLoading,
+      sleep: sleep,
+      postWithRetry: postWithRetry
     };
   })();
 </script>

@@ -1,9 +1,21 @@
-function getPublicState_() {
-  var settings = getAllSettings_();
+function invalidatePublicStateCache_() {
+  CacheService.getScriptCache().remove(CONFIG.CACHE_PREFIX + 'public_state');
+}
+
+function invalidateLotteryDisplayCache_(batchId) {
+  if (!batchId) return;
+  CacheService.getScriptCache().remove(CONFIG.CACHE_PREFIX + 'lottery_display_' + batchId);
+}
+
+function getPublicStateCacheTtl_(settings) {
+  if (settings.display_mode === 'LOTTERY_RESULT') {
+    return CONFIG.CACHE_TTL.LOTTERY_DISPLAY;
+  }
+  return CONFIG.CACHE_TTL.PUBLIC_STATE;
+}
+
+function buildPublicStateBody_(settings) {
   var hasActiveEvent = settings.event_status === 'ACTIVE';
-  var qr = buildQrToken_(settings);
-  var candidateUrl = getCandidateUrl_();
-  var qrUrl = candidateUrl + '&token=' + encodeURIComponent(qr.token);
 
   var state = {
     has_active_event: hasActiveEvent,
@@ -16,14 +28,6 @@ function getPublicState_() {
     deadline: settings.deadline || '',
     show_deadline: !!settings.show_deadline,
     mode: settings.mode || CONFIG.DEFAULTS.MODE,
-    waitlist_count: countActiveWaitlist_(),
-    qr: {
-      url: qrUrl,
-      token: qr.token,
-      rotation_enabled: qr.rotation_enabled,
-      interval: qr.interval,
-      expires_at: qr.expires_at
-    },
     show_qr_countdown: !!settings.show_qr_countdown,
     display_title: settings.display_title || '',
     display_subtitle: settings.display_subtitle || '',
@@ -35,19 +39,58 @@ function getPublicState_() {
     state.lottery_display = buildLotteryDisplay_(settings);
   }
 
+  return state;
+}
+
+function attachVolatilePublicFields_(state, settings) {
+  var qr = buildQrToken_(settings);
+  var candidateUrl = getCandidateUrl_();
+
+  state.waitlist_count = countActiveWaitlist_();
+  state.qr = {
+    url: candidateUrl + '&token=' + encodeURIComponent(qr.token),
+    token: qr.token,
+    rotation_enabled: qr.rotation_enabled,
+    interval: qr.interval,
+    expires_at: qr.expires_at
+  };
+
+  return state;
+}
+
+function getPublicState_() {
+  var settings = getAllSettings_();
+  var cache = CacheService.getScriptCache();
+  var cacheKey = CONFIG.CACHE_PREFIX + 'public_state';
+  var cached = cache.get(cacheKey);
+  var state;
+
+  if (cached) {
+    state = JSON.parse(cached);
+  } else {
+    state = buildPublicStateBody_(settings);
+    cache.put(cacheKey, JSON.stringify(state), getPublicStateCacheTtl_(settings));
+  }
+
+  attachVolatilePublicFields_(state, settings);
   return success_(state);
 }
 
 function buildLotteryDisplay_(settings) {
-  var batch = getBatchById_(settings.active_batch_id);
+  var batchId = settings.active_batch_id;
+  if (!batchId) return null;
+
+  var cacheKey = CONFIG.CACHE_PREFIX + 'lottery_display_' + batchId;
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  var batch = getBatchById_(batchId);
   if (!batch) return null;
 
   var results = getBatchResults_(batch);
-  var waitlistMap = {};
-  getAllWaitlistRows_().forEach(function (row) {
-    waitlistMap[row.waitlist_no] = row;
-  });
-
   var entries = results.map(function (result) {
     return {
       waitlist_no: formatWaitlistNo_(result.waitlist_no),
@@ -61,7 +104,7 @@ function buildLotteryDisplay_(settings) {
     });
   }
 
-  return {
+  var display = {
     batch_id: batch.batch_id,
     batch_no: batch.batch_no,
     display_title: batch.display_title || settings.display_title || '候補抽選結果',
@@ -75,6 +118,9 @@ function buildLotteryDisplay_(settings) {
     show_page_number: !!settings.show_page_number,
     show_random_rank: !!settings.show_random_rank
   };
+
+  cache.put(cacheKey, JSON.stringify(display), CONFIG.CACHE_TTL.LOTTERY_DISPLAY);
+  return display;
 }
 
 function getAdminDashboard_() {

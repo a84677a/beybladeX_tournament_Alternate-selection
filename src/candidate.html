@@ -219,9 +219,10 @@
       const btn = document.getElementById('btn-submit');
       if (!pending || btn.disabled) return;
       if (mode === 'counter') {
-        document.getElementById('pin-name').textContent = pending.name;
-        document.getElementById('pin-phone').textContent = pending.phone.slice(0, 4) + '***' + pending.phone.slice(-3);
-        show('screen-pin');
+        UI.runWithLoading(btn, '鎖定資料中…', () => enterPinStage())
+          .catch(e => {
+            document.getElementById('review-error').textContent = e.message || '無法進入 PIN 核驗';
+          });
         return;
       }
       UI.runWithLoading(btn, '登記中…', () => submitRegistration(null))
@@ -229,6 +230,23 @@
           document.getElementById('review-error').textContent = e.message || '登記失敗，請稍後再試';
         });
     });
+
+    async function enterPinStage() {
+      await ensureFormSession();
+      const res = await post('lockForPinVerification', {
+        form_session_id: formSessionId,
+        name: pending.name,
+        phone: pending.phone
+      });
+      if (!res.ok) {
+        throw new Error(res.error?.message || '無法鎖定資料，請重新確認');
+      }
+      document.getElementById('pin-name').textContent = pending.name;
+      document.getElementById('pin-phone').textContent = pending.phone.slice(0, 4) + '***' + pending.phone.slice(-3);
+      document.getElementById('pin-error').textContent = '';
+      document.getElementById('staff-pin').value = '';
+      show('screen-pin');
+    }
 
     document.getElementById('btn-pin-submit').addEventListener('click', () => {
       const btn = document.getElementById('btn-pin-submit');
@@ -241,7 +259,9 @@
     });
 
     async function submitRegistration(staffPin) {
-      await ensureFormSession();
+      if (mode !== 'counter') {
+        await ensureFormSession();
+      }
 
       const payload = {
         request_id: requestId,
@@ -252,7 +272,7 @@
       if (staffPin) payload.staff_pin = staffPin;
 
       const action = mode === 'counter' ? 'verifyAndRegister' : 'register';
-      const res = await post(action, payload);
+      const res = await UI.postWithRetry(post, action, payload);
 
       if (res.ok) {
         showSuccess(res.data);

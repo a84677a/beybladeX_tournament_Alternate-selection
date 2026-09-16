@@ -17,16 +17,22 @@ function processRegistration_(payload, options) {
     return error_('INVALID_REQUEST', '缺少 request_id');
   }
 
-  var existing = findByRequestId_(requestId);
-  if (existing) {
-    return success_(toSuccessPayload_(existing));
-  }
-
   if (!isValidName_(name)) {
     return error_('INVALID_NAME', '請輸入有效的真實姓名');
   }
   if (!isValidPhone_(phone)) {
     return error_('INVALID_PHONE', '請輸入有效的手機號碼（09xxxxxxxx）');
+  }
+
+  var normalizedName = normalizeName_(name);
+  var normalizedPhone = normalizePhone_(phone);
+  var precheck = lookupWaitlistForRegistration_(requestId, normalizedName, normalizedPhone);
+
+  if (precheck.byRequestId) {
+    return success_(toSuccessPayload_(precheck.byRequestId));
+  }
+  if (precheck.exactDuplicate) {
+    return error_('DUPLICATE', '此資料已完成候補登記，顯示原候補序號。', toSuccessPayload_(precheck.exactDuplicate));
   }
 
   var settings = getAllSettings_();
@@ -37,22 +43,22 @@ function processRegistration_(payload, options) {
     return error_('REGISTRATION_CLOSED', '本場候補登記已結束；尚未取得候補序號者無法完成登記。');
   }
 
-  var sessionCheck = validateFormSession_(formSessionId);
+  var sessionCheck = options.requirePin
+    ? validatePinPendingSession_(formSessionId, name, phone)
+    : validateFormSession_(formSessionId);
   if (!sessionCheck.valid) {
+    if (sessionCheck.reason === 'data_mismatch') {
+      return error_('SESSION_MISMATCH', '資料與確認時不一致，請返回重新確認。');
+    }
+    if (sessionCheck.reason === 'not_locked') {
+      return error_('SESSION_EXPIRED', '請先完成資料確認，再交由工作人員輸入 PIN。');
+    }
     return error_('SESSION_EXPIRED', '填寫時間已過期，請重新掃描 QR Code。');
   }
 
   if (options.requirePin) {
     var pinResult = verifyStaffPin_(payload.staff_pin);
     if (!pinResult.ok) return pinResult;
-  }
-
-  var normalizedName = normalizeName_(name);
-  var normalizedPhone = normalizePhone_(phone);
-
-  var duplicate = findExactDuplicate_(normalizedName, normalizedPhone);
-  if (duplicate) {
-    return error_('DUPLICATE', '此資料已完成候補登記，顯示原候補序號。', toSuccessPayload_(duplicate));
   }
 
   var cap = Number(settings.waitlist_cap);
@@ -62,43 +68,21 @@ function processRegistration_(payload, options) {
 
   try {
     var row = withScriptLock_(function () {
-      var latestSettings = getAllSettings_();
-      if (!latestSettings.registration_enabled) {
-        throw new Error('REGISTRATION_CLOSED');
-      }
-
-      var dupAgain = findExactDuplicate_(normalizedName, normalizedPhone);
-      if (dupAgain) return dupAgain;
-
-      var againByRequest = findByRequestId_(requestId);
-      if (againByRequest) return againByRequest;
-
-      if (cap > 0 && countActiveWaitlist_() >= cap) {
-        throw new Error('CAPACITY_FULL');
-      }
-
-      var waitlistNo = Number(latestSettings.next_waitlist_number) || 1;
-      var duplicateFlags = findDuplicateFlags_(normalizedName, normalizedPhone).join(',');
-
-      var newRow = {
-        event_id: latestSettings.event_id,
-        waitlist_no: waitlistNo,
-        name: String(name).trim(),
-        phone: normalizePhone_(phone),
-        normalized_name: normalizedName,
-        normalized_phone: normalizedPhone,
-        registered_at: new Date(),
-        request_id: requestId,
-        receipt_token: generateReceiptToken_(),
-        duplicate_flags: duplicateFlags,
-        status: 'active'
-      };
-
-      insertWaitlistRow_(newRow);
-      setSetting_('next_waitlist_number', waitlistNo + 1);
-      return newRow;
+      return finalizeRegistrationInLock_({
+        requestId: requestId,
+        name: name,
+        normalizedName: normalizedName,
+        normalizedPhone: normalizedPhone,
+        cap: cap,
+        duplicateFlags: precheck.duplicateFlags
+      });
     });
 
+    if (row && row._duplicate) {
+      return error_('DUPLICATE', '此資料已完成候補登記，顯示原候補序號。', toSuccessPayload_(row._duplicate));
+    }
+
+    clearFormSession_(formSessionId);
     return success_(toSuccessPayload_(row));
   } catch (e) {
     if (e.message === 'REGISTRATION_CLOSED') {
@@ -109,6 +93,50 @@ function processRegistration_(payload, options) {
     }
     throw e;
   }
+}
+
+function finalizeRegistrationInLock_(input) {
+  var latestSettings = getAllSettings_();
+  if (!latestSettings.registration_enabled) {
+    throw new Error('REGISTRATION_CLOSED');
+  }
+
+  var lockedLookup = lookupWaitlistForRegistration_(
+    input.requestId,
+    input.normalizedName,
+    input.normalizedPhone
+  );
+  if (lockedLookup.byRequestId) return lockedLookup.byRequestId;
+  if (lockedLookup.exactDuplicate) {
+    return { _duplicate: lockedLookup.exactDuplicate };
+  }
+
+  if (input.cap > 0 && countActiveWaitlist_() >= input.cap) {
+    throw new Error('CAPACITY_FULL');
+  }
+
+  var waitlistNo = Number(latestSettings.next_waitlist_number) || 1;
+  var duplicateFlags = (lockedLookup.duplicateFlags.length
+    ? lockedLookup.duplicateFlags
+    : input.duplicateFlags).join(',');
+
+  var newRow = {
+    event_id: latestSettings.event_id,
+    waitlist_no: waitlistNo,
+    name: String(input.name).trim(),
+    phone: input.normalizedPhone,
+    normalized_name: input.normalizedName,
+    normalized_phone: input.normalizedPhone,
+    registered_at: new Date(),
+    request_id: input.requestId,
+    receipt_token: generateReceiptToken_(),
+    duplicate_flags: duplicateFlags,
+    status: 'active'
+  };
+
+  insertWaitlistRow_(newRow);
+  setSetting_('next_waitlist_number', waitlistNo + 1);
+  return newRow;
 }
 
 function getReceipt_(receiptToken) {

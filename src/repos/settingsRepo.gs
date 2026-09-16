@@ -15,12 +15,22 @@ function getAllSettings_() {
     if (key) settings[key] = value;
   }
   settings = coerceSettings_(settings);
-  cache.put(cacheKey, JSON.stringify(settings), 5);
+  cache.put(cacheKey, JSON.stringify(settings), CONFIG.CACHE_TTL.SETTINGS);
   return settings;
 }
 
 function invalidateSettingsCache_() {
-  CacheService.getScriptCache().remove(CONFIG.CACHE_PREFIX + 'settings');
+  var cache = CacheService.getScriptCache();
+  var settingsKey = CONFIG.CACHE_PREFIX + 'settings';
+  var cached = cache.get(settingsKey);
+  if (cached) {
+    var settings = JSON.parse(cached);
+    if (settings.active_batch_id) {
+      invalidateLotteryDisplayCache_(settings.active_batch_id);
+    }
+  }
+  cache.remove(settingsKey);
+  invalidatePublicStateCache_();
 }
 
 function getSetting_(key, defaultValue) {

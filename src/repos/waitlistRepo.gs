@@ -25,42 +25,173 @@ function rowToObject_(headers, row) {
   return obj;
 }
 
+function getWaitlistIndexCacheKey_() {
+  return CONFIG.CACHE_PREFIX + 'waitlist_index';
+}
+
+function toIndexRow_(row) {
+  return {
+    event_id: row.event_id,
+    waitlist_no: row.waitlist_no,
+    name: row.name,
+    phone: row.phone,
+    normalized_name: row.normalized_name,
+    normalized_phone: row.normalized_phone,
+    registered_at: row.registered_at,
+    request_id: row.request_id,
+    receipt_token: row.receipt_token,
+    duplicate_flags: row.duplicate_flags,
+    status: row.status
+  };
+}
+
+function buildWaitlistIndexFromRows_(rows) {
+  var index = {
+    by_request: {},
+    by_receipt: {},
+    by_exact: {},
+    phones: {},
+    names: {}
+  };
+
+  rows.forEach(function (row) {
+    if (row.status !== 'active') return;
+    var compact = toIndexRow_(row);
+
+    if (compact.request_id) {
+      index.by_request[compact.request_id] = compact;
+    }
+    if (compact.receipt_token) {
+      index.by_receipt[compact.receipt_token] = compact;
+    }
+
+    var exactKey = compact.normalized_name + '|' + compact.normalized_phone;
+    index.by_exact[exactKey] = compact;
+
+    if (!index.phones[compact.normalized_phone]) {
+      index.phones[compact.normalized_phone] = [];
+    }
+    index.phones[compact.normalized_phone].push(compact);
+
+    if (!index.names[compact.normalized_name]) {
+      index.names[compact.normalized_name] = [];
+    }
+    index.names[compact.normalized_name].push(compact);
+  });
+
+  return index;
+}
+
+function rebuildWaitlistIndex_() {
+  var index = buildWaitlistIndexFromRows_(getAllWaitlistRows_());
+  CacheService.getScriptCache().put(
+    getWaitlistIndexCacheKey_(),
+    JSON.stringify(index),
+    CONFIG.CACHE_TTL.WAITLIST_INDEX
+  );
+  return index;
+}
+
+function getWaitlistIndex_() {
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get(getWaitlistIndexCacheKey_());
+  if (cached) {
+    return JSON.parse(cached);
+  }
+  return rebuildWaitlistIndex_();
+}
+
+function appendWaitlistIndexEntry_(row) {
+  var cache = CacheService.getScriptCache();
+  var cacheKey = getWaitlistIndexCacheKey_();
+  var raw = cache.get(cacheKey);
+  if (!raw) {
+    rebuildWaitlistIndex_();
+    return;
+  }
+
+  var index = JSON.parse(raw);
+  var compact = toIndexRow_(row);
+
+  if (compact.request_id) {
+    index.by_request[compact.request_id] = compact;
+  }
+  if (compact.receipt_token) {
+    index.by_receipt[compact.receipt_token] = compact;
+  }
+
+  var exactKey = compact.normalized_name + '|' + compact.normalized_phone;
+  index.by_exact[exactKey] = compact;
+
+  if (!index.phones[compact.normalized_phone]) {
+    index.phones[compact.normalized_phone] = [];
+  }
+  index.phones[compact.normalized_phone].push(compact);
+
+  if (!index.names[compact.normalized_name]) {
+    index.names[compact.normalized_name] = [];
+  }
+  index.names[compact.normalized_name].push(compact);
+
+  cache.put(cacheKey, JSON.stringify(index), CONFIG.CACHE_TTL.WAITLIST_INDEX);
+}
+
+function invalidateWaitlistIndex_() {
+  CacheService.getScriptCache().remove(getWaitlistIndexCacheKey_());
+}
+
+function lookupWaitlistForRegistration_(requestId, normalizedName, normalizedPhone) {
+  var index = getWaitlistIndex_();
+  var byRequestId = requestId ? (index.by_request[requestId] || null) : null;
+  var exactDuplicate = null;
+  var duplicateFlags = [];
+
+  if (normalizedName && normalizedPhone) {
+    exactDuplicate = index.by_exact[normalizedName + '|' + normalizedPhone] || null;
+
+    var phoneRows = index.phones[normalizedPhone] || [];
+    for (var i = 0; i < phoneRows.length; i++) {
+      if (phoneRows[i].normalized_name !== normalizedName) {
+        duplicateFlags.push('same_phone');
+        break;
+      }
+    }
+
+    var nameRows = index.names[normalizedName] || [];
+    for (var j = 0; j < nameRows.length; j++) {
+      if (nameRows[j].normalized_phone !== normalizedPhone) {
+        duplicateFlags.push('same_name');
+        break;
+      }
+    }
+  }
+
+  return {
+    byRequestId: byRequestId,
+    exactDuplicate: exactDuplicate,
+    duplicateFlags: duplicateFlags
+  };
+}
+
 function findByRequestId_(requestId) {
   if (!requestId) return null;
-  return getAllWaitlistRows_().find(function (row) {
-    return row.request_id === requestId;
-  }) || null;
+  var index = getWaitlistIndex_();
+  return index.by_request[requestId] || null;
 }
 
 function findByReceiptToken_(receiptToken) {
   if (!receiptToken) return null;
-  return getAllWaitlistRows_().find(function (row) {
-    return row.receipt_token === receiptToken;
-  }) || null;
+  var index = getWaitlistIndex_();
+  return index.by_receipt[receiptToken] || null;
 }
 
 function findExactDuplicate_(normalizedName, normalizedPhone) {
-  return getAllWaitlistRows_().find(function (row) {
-    return row.normalized_name === normalizedName &&
-      row.normalized_phone === normalizedPhone &&
-      row.status === 'active';
-  }) || null;
+  var index = getWaitlistIndex_();
+  return index.by_exact[normalizedName + '|' + normalizedPhone] || null;
 }
 
 function findDuplicateFlags_(normalizedName, normalizedPhone) {
-  var flags = [];
-  var rows = getAllWaitlistRows_();
-  var samePhone = rows.some(function (row) {
-    return row.normalized_phone === normalizedPhone &&
-      row.normalized_name !== normalizedName;
-  });
-  var sameName = rows.some(function (row) {
-    return row.normalized_name === normalizedName &&
-      row.normalized_phone !== normalizedPhone;
-  });
-  if (samePhone) flags.push('same_phone');
-  if (sameName) flags.push('same_name');
-  return flags;
+  return lookupWaitlistForRegistration_(null, normalizedName, normalizedPhone).duplicateFlags;
 }
 
 function insertWaitlistRow_(row) {
@@ -71,6 +202,7 @@ function insertWaitlistRow_(row) {
   });
   sheet.appendRow(values);
   invalidateWaitlistCountCache_();
+  appendWaitlistIndexEntry_(row);
   return row;
 }
 
@@ -85,7 +217,7 @@ function countActiveWaitlist_() {
   var sheet = getWaitlistSheet_();
   var lastRow = sheet.getLastRow();
   if (lastRow <= 1) {
-    cache.put(cacheKey, '0', 5);
+    cache.put(cacheKey, '0', CONFIG.CACHE_TTL.WAITLIST_COUNT);
     return 0;
   }
 
@@ -95,7 +227,7 @@ function countActiveWaitlist_() {
   for (var i = 0; i < statuses.length; i++) {
     if (statuses[i][0] === 'active') count++;
   }
-  cache.put(cacheKey, String(count), 5);
+  cache.put(cacheKey, String(count), CONFIG.CACHE_TTL.WAITLIST_COUNT);
   return count;
 }
 

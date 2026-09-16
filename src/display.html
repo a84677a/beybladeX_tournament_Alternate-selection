@@ -54,6 +54,8 @@
     let lastState = null;
     let carouselTimer = null;
     let carouselPage = 0;
+    let pollTimer = null;
+    let pollIntervalMs = 10000;
 
     function post(action, body) {
       return fetch(WEB_APP_URL, {
@@ -199,20 +201,27 @@
       return renderClosed(state);
     }
 
-    async function refresh() {
-      try {
-        const res = await post('getPublicState');
-        if (res.ok) renderState(res.data);
-      } catch (e) {
-        console.warn('refresh failed, keep last screen', e);
-      }
+    function scheduleRefresh() {
+      clearTimeout(pollTimer);
+      pollTimer = setTimeout(async () => {
+        try {
+          const res = await post('getPublicState');
+          if (res.ok) {
+            renderState(res.data);
+            pollIntervalMs = 10000;
+          }
+        } catch (e) {
+          console.warn('refresh failed, keep last screen', e);
+          pollIntervalMs = Math.min(Math.round(pollIntervalMs * 1.5), 30000);
+        }
+        scheduleRefresh();
+      }, pollIntervalMs);
     }
 
     if (INITIAL_STATE) {
       renderState(INITIAL_STATE);
     }
-    refresh();
-    setInterval(refresh, 5000);
+    scheduleRefresh();
   </script>
 </body>
 </html>

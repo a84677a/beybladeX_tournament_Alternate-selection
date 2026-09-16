@@ -395,7 +395,7 @@
       document.getElementById('set-qr-rotation').checked = !!s.qr_rotation;
       document.getElementById('set-qr-interval').value = s.qr_rotation_interval || 20;
       document.getElementById('set-token-ttl').value = s.token_ttl || 40;
-      document.getElementById('set-form-ttl').value = s.form_session_ttl || 90;
+      document.getElementById('set-form-ttl').value = s.form_session_ttl || 70;
       document.getElementById('first-batch-count').value = s.lottery_first_batch_count || 60;
       document.getElementById('lottery-status').textContent =
         '抽選狀態：' + (s.lottery_locked ? '已完成（不可重抽）' : '尚未抽選');
