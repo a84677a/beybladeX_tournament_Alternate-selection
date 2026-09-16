@@ -3,7 +3,7 @@ function buildQrToken_(settings) {
   var interval = Number(settings.qr_rotation_interval) || CONFIG.DEFAULTS.QR_ROTATION_INTERVAL;
   var timeWindow = getCurrentTimeWindow_(interval);
   var token = hmacToken_(settings.event_id, timeWindow);
-  var expiresAt = (timeWindow + 2) * interval;
+  var expiresAt = (timeWindow + 1) * interval;
 
   return {
     token: token,

@@ -56,6 +56,8 @@
     let carouselPage = 0;
     let pollTimer = null;
     let pollIntervalMs = 10000;
+    let qrCountdownTimer = null;
+    let qrCountdownMeta = null;
 
     function post(action, body) {
       return fetch(WEB_APP_URL, {
@@ -97,6 +99,40 @@
       text.textContent = '候補登記截止時間：' + deadline;
     }
 
+    function stopQrCountdown() {
+      clearInterval(qrCountdownTimer);
+      qrCountdownTimer = null;
+      qrCountdownMeta = null;
+    }
+
+    function renderQrCountdown() {
+      const countdownEl = document.getElementById('qr-countdown');
+      if (!qrCountdownMeta) {
+        countdownEl.classList.add('hidden');
+        return;
+      }
+
+      const remain = Math.max(0, qrCountdownMeta.expiresAt - Math.floor(Date.now() / 1000));
+      countdownEl.classList.remove('hidden');
+      countdownEl.textContent =
+        'QR Code 每 ' + qrCountdownMeta.interval + ' 秒更新一次（約 ' + remain + ' 秒後更新）';
+    }
+
+    function startQrCountdown(qr, showCountdown) {
+      stopQrCountdown();
+      if (!qr || !qr.rotation_enabled || !showCountdown) {
+        renderQrCountdown();
+        return;
+      }
+
+      qrCountdownMeta = {
+        interval: qr.interval,
+        expiresAt: qr.expires_at
+      };
+      renderQrCountdown();
+      qrCountdownTimer = setInterval(renderQrCountdown, 1000);
+    }
+
     function renderOpen(state) {
       showScreen('screen-open');
       document.getElementById('event-title').textContent = formatEventTitle(state);
@@ -111,17 +147,11 @@
           'https://chart.googleapis.com/chart?cht=qr&chs=400x400&chl=' + encodeURIComponent(state.qr.url);
       }
 
-      const countdownEl = document.getElementById('qr-countdown');
-      if (state.qr && state.qr.rotation_enabled && state.show_qr_countdown) {
-        countdownEl.classList.remove('hidden');
-        const remain = Math.max(0, state.qr.expires_at - Math.floor(Date.now() / 1000));
-        countdownEl.textContent = 'QR Code 每 ' + state.qr.interval + ' 秒更新一次（約 ' + remain + ' 秒後更新）';
-      } else {
-        countdownEl.classList.add('hidden');
-      }
+      startQrCountdown(state.qr, state.show_qr_countdown);
     }
 
     function renderProcessing(state) {
+      stopQrCountdown();
       showScreen('screen-processing');
       document.getElementById('event-title-2').textContent = formatEventTitle(state);
       document.getElementById('status-processing').textContent =
@@ -131,6 +161,7 @@
     }
 
     function renderClosed(state) {
+      stopQrCountdown();
       showScreen('screen-closed');
       document.getElementById('event-title-3').textContent = formatEventTitle(state);
       const closedFallback = state.has_active_event ? '候補登記已關閉' : '尚未建立場次';
@@ -139,6 +170,7 @@
     }
 
     function renderLottery(state) {
+      stopQrCountdown();
       showScreen('screen-lottery');
       document.getElementById('event-title-4').textContent = formatEventTitle(state);
       const lottery = state.lottery_display;
