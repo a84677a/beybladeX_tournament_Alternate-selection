@@ -48,13 +48,16 @@ function buildLotteryDisplay_(settings) {
     waitlistMap[row.waitlist_no] = row;
   });
 
-  var numbers = results.map(function (result) {
-    return formatWaitlistNo_(result.waitlist_no);
+  var entries = results.map(function (result) {
+    return {
+      waitlist_no: formatWaitlistNo_(result.waitlist_no),
+      random_rank: Number(result.random_rank)
+    };
   });
 
   if (settings.lottery_sort_asc) {
-    numbers.sort(function (a, b) {
-      return Number(a.replace('#', '')) - Number(b.replace('#', ''));
+    entries.sort(function (a, b) {
+      return Number(a.waitlist_no.replace('#', '')) - Number(b.waitlist_no.replace('#', ''));
     });
   }
 
@@ -62,8 +65,12 @@ function buildLotteryDisplay_(settings) {
     batch_id: batch.batch_id,
     batch_no: batch.batch_no,
     display_title: batch.display_title || settings.display_title || '候補抽選結果',
-    numbers: numbers,
+    entries: entries,
+    numbers: entries.map(function (entry) {
+      return entry.waitlist_no;
+    }),
     results_per_page: Number(settings.results_per_page) || CONFIG.DEFAULTS.RESULTS_PER_PAGE,
+    results_columns: Number(settings.results_columns) || 0,
     carousel_seconds: Number(settings.carousel_seconds) || CONFIG.DEFAULTS.DISPLAY_CAROUSEL_SECONDS,
     show_page_number: !!settings.show_page_number,
     show_random_rank: !!settings.show_random_rank

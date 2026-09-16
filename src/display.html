@@ -144,19 +144,30 @@
 
       document.getElementById('lottery-title').textContent = lottery.display_title;
       const perPage = lottery.results_per_page || 16;
+      const entries = (lottery.entries || lottery.numbers.map(no => ({ waitlist_no: no })));
       const pages = [];
-      for (let i = 0; i < lottery.numbers.length; i += perPage) {
-        pages.push(lottery.numbers.slice(i, i + perPage));
+      for (let i = 0; i < entries.length; i += perPage) {
+        pages.push(entries.slice(i, i + perPage));
       }
       if (pages.length === 0) pages.push([]);
 
       function renderPage() {
         const grid = document.getElementById('lottery-grid');
         grid.innerHTML = '';
-        pages[carouselPage].forEach(no => {
+        if (lottery.results_columns > 0) {
+          grid.style.gridTemplateColumns = 'repeat(' + lottery.results_columns + ', 1fr)';
+        } else {
+          grid.style.gridTemplateColumns = '';
+        }
+        pages[carouselPage].forEach(entry => {
           const div = document.createElement('div');
           div.className = 'lottery-no';
-          div.textContent = no;
+          if (lottery.show_random_rank && entry.random_rank) {
+            div.innerHTML = '<span class="lottery-rank">' + entry.random_rank + '</span>' +
+              '<span class="lottery-waitlist-no">' + entry.waitlist_no + '</span>';
+          } else {
+            div.textContent = entry.waitlist_no;
+          }
           grid.appendChild(div);
         });
         const pageEl = document.getElementById('lottery-page');

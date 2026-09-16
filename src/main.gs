@@ -78,7 +78,7 @@ function dispatchAction_(action, body) {
     case 'admin.runInitialLottery':
       return runInitialLottery_(body.first_batch_count, body.advanced_rules);
     case 'admin.createPublishBatch':
-      return createPublishBatch_(body.count);
+      return createPublishBatch_(body.count, null, null, body.display_title);
     case 'admin.setDisplayedBatch':
       return setDisplayedBatch_(body.batch_id);
     case 'admin.createEvent':

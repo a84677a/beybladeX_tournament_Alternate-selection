@@ -82,18 +82,78 @@
 
     <div id="panel-lottery" class="card hidden">
       <h2>抽選管理</h2>
+      <p class="muted" id="lottery-status">抽選狀態：-</p>
       <div class="field">
         <label>首輪公布人數</label>
         <input id="first-batch-count" type="number" min="1" value="60">
       </div>
+      <details id="lottery-advanced-details">
+        <summary>進階抽選設定</summary>
+        <div style="margin-top:16px;">
+          <div class="field">
+            <label for="lottery-exclude">排除序號（不參與抽選）</label>
+            <input id="lottery-exclude" type="text" placeholder="例：001, 005, 012">
+            <p class="muted" style="margin-top:4px;font-size:14px;">逗號分隔，可填 #001 或 1</p>
+          </div>
+          <div class="field">
+            <label for="lottery-include">必中首輪（強制納入首輪公布）</label>
+            <input id="lottery-include" type="text" placeholder="例：003, 007">
+            <p class="muted" style="margin-top:4px;font-size:14px;">這些序號會固定在首輪公布範圍內</p>
+          </div>
+        </div>
+      </details>
       <button class="btn btn-primary" id="btn-run-lottery">開始抽選</button>
       <hr style="border-color:var(--border);margin:20px 0;">
       <div class="field">
         <label>追加公布人數</label>
         <input id="next-batch-count" type="number" min="1" value="8">
       </div>
+      <div class="field">
+        <label for="next-batch-title">追加批次標題（選填）</label>
+        <input id="next-batch-title" type="text" placeholder="例：第2次候補抽選結果">
+      </div>
       <button class="btn btn-secondary" id="btn-add-batch">建立下一批</button>
       <div id="batch-list" style="margin-top:16px;"></div>
+      <hr style="border-color:var(--border);margin:20px 0;">
+      <details>
+        <summary>結果顯示設定</summary>
+        <div class="grid-2" style="margin-top:16px;">
+          <div class="field field-switch">
+            <label for="set-lottery-sort-asc">依候補序號排序</label>
+            <label class="switch">
+              <input id="set-lottery-sort-asc" type="checkbox">
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+          <div class="field field-switch">
+            <label for="set-show-random-rank">顯示抽選順位</label>
+            <label class="switch">
+              <input id="set-show-random-rank" type="checkbox">
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+          <div class="field field-switch">
+            <label for="set-show-page-number">顯示頁碼</label>
+            <label class="switch">
+              <input id="set-show-page-number" type="checkbox">
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+          <div class="field">
+            <label for="set-results-per-page">每頁顯示人數</label>
+            <input id="set-results-per-page" type="number" min="1">
+          </div>
+          <div class="field">
+            <label for="set-results-columns">每列欄數</label>
+            <input id="set-results-columns" type="number" min="1" placeholder="留空自動">
+          </div>
+          <div class="field">
+            <label for="set-carousel-seconds">輪播間隔（秒）</label>
+            <input id="set-carousel-seconds" type="number" min="1">
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-save-lottery-display">儲存顯示設定</button>
+      </details>
     </div>
 
     <div id="panel-display" class="card hidden">
@@ -176,6 +236,15 @@
         localStorage.setItem(SOURCE_ID_KEY, id);
       }
       return id;
+    }
+
+    function parseWaitlistNos(str) {
+      if (!str || !str.trim()) return [];
+      return str.split(/[,，\s]+/)
+        .map(s => s.replace(/^#/, '').trim())
+        .filter(Boolean)
+        .map(Number)
+        .filter(n => !isNaN(n) && n > 0);
     }
 
     function showLoginAlert(message) {
@@ -328,6 +397,21 @@
       document.getElementById('set-token-ttl').value = s.token_ttl || 40;
       document.getElementById('set-form-ttl').value = s.form_session_ttl || 90;
       document.getElementById('first-batch-count').value = s.lottery_first_batch_count || 60;
+      document.getElementById('lottery-status').textContent =
+        '抽選狀態：' + (s.lottery_locked ? '已完成（不可重抽）' : '尚未抽選');
+      document.getElementById('set-lottery-sort-asc').checked = s.lottery_sort_asc !== false;
+      document.getElementById('set-show-random-rank').checked = !!s.show_random_rank;
+      document.getElementById('set-show-page-number').checked = !!s.show_page_number;
+      document.getElementById('set-results-per-page').value = s.results_per_page || 16;
+      document.getElementById('set-results-columns').value = s.results_columns || '';
+      document.getElementById('set-carousel-seconds').value = s.carousel_seconds || 5;
+
+      const lotteryLocked = !!s.lottery_locked;
+      document.getElementById('btn-run-lottery').disabled = lotteryLocked;
+      document.getElementById('first-batch-count').disabled = lotteryLocked;
+      document.getElementById('lottery-exclude').disabled = lotteryLocked;
+      document.getElementById('lottery-include').disabled = lotteryLocked;
+      document.getElementById('btn-add-batch').disabled = !lotteryLocked;
 
       const batchList = document.getElementById('batch-list');
       batchList.innerHTML = '';
@@ -363,11 +447,23 @@
     document.getElementById('btn-run-lottery').addEventListener('click', () => {
       const btn = document.getElementById('btn-run-lottery');
       if (btn.disabled) return;
-      if (!confirm('確定執行首次抽選？此操作不可直接重抽。')) return;
+      const exclude = parseWaitlistNos(document.getElementById('lottery-exclude').value);
+      const include = parseWaitlistNos(document.getElementById('lottery-include').value);
+      let confirmMsg = '確定執行首次抽選？此操作不可直接重抽。';
+      if (exclude.length) confirmMsg += '\n\n排除序號：' + exclude.join(', ');
+      if (include.length) confirmMsg += '\n必中首輪：' + include.join(', ');
+      if (!confirm(confirmMsg)) return;
       UI.runWithLoading(btn, '抽選中…', async () => {
         const count = Number(document.getElementById('first-batch-count').value);
-        const res = await post('admin.runInitialLottery', { first_batch_count: count });
+        const res = await post('admin.runInitialLottery', {
+          first_batch_count: count,
+          advanced_rules: { exclude, include }
+        });
         alert(res.ok ? '抽選完成' : (res.error?.message || '失敗'));
+        if (res.ok) {
+          document.getElementById('lottery-exclude').value = '';
+          document.getElementById('lottery-include').value = '';
+        }
         await loadDashboard();
       });
     });
@@ -377,9 +473,32 @@
       if (btn.disabled) return;
       UI.runWithLoading(btn, '建立中…', async () => {
         const count = Number(document.getElementById('next-batch-count').value);
-        const res = await post('admin.createPublishBatch', { count });
+        const displayTitle = document.getElementById('next-batch-title').value.trim();
+        const payload = { count };
+        if (displayTitle) payload.display_title = displayTitle;
+        const res = await post('admin.createPublishBatch', payload);
         alert(res.ok ? '已建立下一批' : (res.error?.message || '失敗'));
+        if (res.ok) document.getElementById('next-batch-title').value = '';
         await loadDashboard();
+      });
+    });
+
+    document.getElementById('btn-save-lottery-display').addEventListener('click', () => {
+      const btn = document.getElementById('btn-save-lottery-display');
+      if (btn.disabled) return;
+      UI.runWithLoading(btn, '儲存中…', async () => {
+        const cols = document.getElementById('set-results-columns').value;
+        await post('admin.updateSettings', { settings: {
+          lottery_sort_asc: document.getElementById('set-lottery-sort-asc').checked,
+          show_random_rank: document.getElementById('set-show-random-rank').checked,
+          show_page_number: document.getElementById('set-show-page-number').checked,
+          results_per_page: Number(document.getElementById('set-results-per-page').value),
+          results_columns: cols ? Number(cols) : '',
+          carousel_seconds: Number(document.getElementById('set-carousel-seconds').value),
+          lottery_first_batch_count: Number(document.getElementById('first-batch-count').value)
+        }});
+        await loadDashboard();
+        alert('已儲存');
       });
     });
 
