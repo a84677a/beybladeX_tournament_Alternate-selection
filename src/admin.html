@@ -158,14 +158,66 @@
 
     <div id="panel-display" class="card hidden">
       <h2>顯示設定</h2>
+
       <div class="grid-2">
-        <div class="field"><label>活動名稱</label><input id="set-event-name"></div>
-        <div class="field"><label>場次名稱</label><input id="set-session-name"></div>
-        <div class="field"><label>截止時間</label><input id="set-deadline" placeholder="14:30"></div>
-        <div class="field"><label>主標語</label><input id="set-display-title"></div>
-        <div class="field"><label>補充說明</label><textarea id="set-display-subtitle" rows="3"></textarea></div>
+        <div class="field">
+          <label for="set-event-name">活動名稱</label>
+          <input id="set-event-name">
+        </div>
+
+        <div class="field">
+          <label for="set-session-name">場次名稱</label>
+          <input id="set-session-name">
+        </div>
+
+        <div class="field">
+          <label for="set-deadline-date">候補截止日期</label>
+          <input id="set-deadline-date" type="date">
+        </div>
+
+        <div class="field">
+          <label for="set-deadline-time">候補截止時間</label>
+          <input id="set-deadline-time" type="time" step="60">
+        </div>
+
+        <div class="field field-switch">
+          <label for="set-show-deadline">顯示截止時間</label>
+          <label class="switch">
+            <input id="set-show-deadline" type="checkbox">
+            <span class="switch-slider"></span>
+          </label>
+        </div>
+
+        <div class="field field-switch">
+          <label for="set-auto-close-deadline">到時自動關閉候補</label>
+          <label class="switch">
+            <input id="set-auto-close-deadline" type="checkbox">
+            <span class="switch-slider"></span>
+          </label>
+        </div>
+
+        <div class="field field-switch">
+          <label for="set-show-waitlist-count">顯示目前候補人數</label>
+          <label class="switch">
+            <input id="set-show-waitlist-count" type="checkbox">
+            <span class="switch-slider"></span>
+          </label>
+        </div>
+
+        <div class="field">
+          <label for="set-display-title">主標語</label>
+          <input id="set-display-title">
+        </div>
+
+        <div class="field">
+          <label for="set-display-subtitle">補充說明</label>
+          <textarea id="set-display-subtitle" rows="3"></textarea>
+        </div>
       </div>
-      <button class="btn btn-primary" id="btn-save-display">儲存顯示設定</button>
+
+      <button class="btn btn-primary" id="btn-save-display">
+        儲存顯示設定
+      </button>
     </div>
 
     <div id="panel-system" class="card hidden">
@@ -187,6 +239,15 @@
               <span class="switch-slider"></span>
             </label>
           </div>
+
+          <div class="field field-switch">
+            <label for="set-show-qr-countdown">顯示 QR 更新資訊</label>
+            <label class="switch">
+              <input id="set-show-qr-countdown" type="checkbox">
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+
           <div class="field"><label>輪換間隔（秒）</label><input id="set-qr-interval" type="number"></div>
           <div class="field"><label>Token TTL（秒）</label><input id="set-token-ttl" type="number"></div>
           <div class="field"><label>填表有效時間（秒）</label><input id="set-form-ttl" type="number"></div>
@@ -245,6 +306,36 @@
         .filter(Boolean)
         .map(Number)
         .filter(n => !isNaN(n) && n > 0);
+    }
+
+    function splitDeadline(deadline) {
+      if (!deadline) {
+        return {
+          date: '',
+          time: ''
+        };
+      }
+
+      const d = new Date(deadline);
+
+      if (isNaN(d.getTime())) {
+        return {
+          date: '',
+          time: ''
+        };
+      }
+
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+
+      const hour = String(d.getHours()).padStart(2, '0');
+      const minute = String(d.getMinutes()).padStart(2, '0');
+
+      return {
+        date: year + '-' + month + '-' + day,
+        time: hour + ':' + minute
+      };
     }
 
     function showLoginAlert(message) {
@@ -377,22 +468,82 @@
       tbody.innerHTML = '';
       dashboard.waitlist.forEach(row => {
         const tr = document.createElement('tr');
-        const flags = (row.duplicate_flags || '').split(',').filter(Boolean).map(f => {
-          const cls = f === 'same_phone' || f === 'same_name' ? 'badge-warn' : 'badge-ok';
-          const label = f === 'same_phone' ? '相同電話' : f === 'same_name' ? '同名' : f;
-          return '<span class="badge ' + cls + '">' + label + '</span>';
-        }).join(' ');
-        tr.innerHTML = '<td>' + row.waitlist_no + '</td><td>' + row.name + '</td><td>' + row.phone_masked + '</td><td>' + row.registered_at + '</td><td>' + flags + '</td>';
+
+        const tdNo = document.createElement('td');
+        tdNo.textContent = row.waitlist_no || '';
+
+        const tdName = document.createElement('td');
+        tdName.textContent = row.name || '';
+
+        const tdPhone = document.createElement('td');
+        tdPhone.textContent = row.phone_masked || '';
+
+        const tdTime = document.createElement('td');
+        tdTime.textContent = row.registered_at || '';
+
+        const tdFlags = document.createElement('td');
+
+        (row.duplicate_flags || '')
+          .split(',')
+          .filter(Boolean)
+          .forEach(function (flag) {
+            const badge = document.createElement('span');
+
+            badge.className =
+              'badge ' +
+              (
+                flag === 'same_phone' || flag === 'same_name'
+                  ? 'badge-warn'
+                  : 'badge-ok'
+              );
+
+            badge.textContent =
+              flag === 'same_phone'
+                ? '相同電話'
+                : flag === 'same_name'
+                  ? '同名'
+                  : flag;
+
+            tdFlags.appendChild(badge);
+            tdFlags.appendChild(document.createTextNode(' '));
+          });
+
+        tr.appendChild(tdNo);
+        tr.appendChild(tdName);
+        tr.appendChild(tdPhone);
+        tr.appendChild(tdTime);
+        tr.appendChild(tdFlags);
+
         tbody.appendChild(tr);
       });
 
       document.getElementById('set-event-name').value = s.event_name || '';
       document.getElementById('set-session-name').value = s.session_name || '';
-      document.getElementById('set-deadline').value = s.deadline || '';
-      document.getElementById('set-display-title').value = s.display_title || '';
-      document.getElementById('set-display-subtitle').value = s.display_subtitle || '';
+
+      const deadlineParts = splitDeadline(s.deadline);
+
+      document.getElementById('set-deadline-date').value = deadlineParts.date;
+      document.getElementById('set-deadline-time').value = deadlineParts.time;
+
+      document.getElementById('set-show-deadline').checked =
+        !!s.show_deadline;
+
+      document.getElementById('set-auto-close-deadline').checked =
+        !!s.auto_close_deadline;
+
+      document.getElementById('set-show-waitlist-count').checked =
+        !!s.show_waitlist_count;
+
+      document.getElementById('set-display-title').value =
+        s.display_title || '';
+
+      document.getElementById('set-display-subtitle').value =
+        s.display_subtitle || '';
+
       document.getElementById('set-mode').value = s.mode || 'general';
       document.getElementById('set-qr-rotation').checked = !!s.qr_rotation;
+      document.getElementById('set-show-qr-countdown').checked =
+        !!s.show_qr_countdown;
       document.getElementById('set-qr-interval').value = s.qr_rotation_interval || 20;
       document.getElementById('set-token-ttl').value = s.token_ttl || 40;
       document.getElementById('set-form-ttl').value = s.form_session_ttl || 70;
@@ -502,21 +653,88 @@
       });
     });
 
+
+
     document.getElementById('btn-save-display').addEventListener('click', () => {
       const btn = document.getElementById('btn-save-display');
+
       if (btn.disabled) return;
+
       UI.runWithLoading(btn, '儲存中…', async () => {
-        await post('admin.updateSettings', { settings: {
-          event_name: document.getElementById('set-event-name').value,
-          session_name: document.getElementById('set-session-name').value,
-          deadline: document.getElementById('set-deadline').value,
-          display_title: document.getElementById('set-display-title').value,
-          display_subtitle: document.getElementById('set-display-subtitle').value
-        }});
+        const deadlineDate =
+          document.getElementById('set-deadline-date').value;
+
+        const deadlineTime =
+          document.getElementById('set-deadline-time').value;
+
+        const showDeadline =
+          document.getElementById('set-show-deadline').checked;
+
+        const autoCloseDeadline =
+          document.getElementById('set-auto-close-deadline').checked;
+
+        let deadline = '';
+
+        if (deadlineDate || deadlineTime) {
+          if (!deadlineDate || !deadlineTime) {
+            alert('截止日期與截止時間必須同時設定');
+            return;
+          }
+
+          const localDate = new Date(
+            deadlineDate + 'T' + deadlineTime + ':00'
+          );
+
+          if (isNaN(localDate.getTime())) {
+            alert('截止日期或時間格式錯誤');
+            return;
+          }
+
+          deadline = localDate.toISOString();
+        }
+
+        if (autoCloseDeadline && !deadline) {
+          alert('啟用自動關閉候補時，必須設定截止日期與時間');
+          return;
+        }
+
+        const res = await post('admin.updateSettings', {
+          settings: {
+            event_name:
+              document.getElementById('set-event-name').value,
+
+            session_name:
+              document.getElementById('set-session-name').value,
+
+            deadline: deadline,
+
+            show_deadline: showDeadline,
+
+            auto_close_deadline: autoCloseDeadline,
+
+            show_waitlist_count:
+              document.getElementById('set-show-waitlist-count').checked,
+
+            display_title:
+              document.getElementById('set-display-title').value,
+
+            display_subtitle:
+              document.getElementById('set-display-subtitle').value
+          }
+        });
+
+        if (!res.ok) {
+          alert(res.error?.message || '儲存失敗');
+          return;
+        }
+
         await loadDashboard();
+
         alert('已儲存');
       });
     });
+
+
 
     document.getElementById('btn-save-system').addEventListener('click', () => {
       const btn = document.getElementById('btn-save-system');
@@ -525,6 +743,8 @@
         const settings = {
           mode: document.getElementById('set-mode').value,
           qr_rotation: document.getElementById('set-qr-rotation').checked,
+          show_qr_countdown:
+            document.getElementById('set-show-qr-countdown').checked,
           qr_rotation_interval: Number(document.getElementById('set-qr-interval').value),
           token_ttl: Number(document.getElementById('set-token-ttl').value),
           form_session_ttl: Number(document.getElementById('set-form-ttl').value),

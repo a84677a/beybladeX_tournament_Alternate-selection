@@ -1,31 +1,75 @@
 function buildQrToken_(settings) {
   settings = settings || getAllSettings_();
-  var interval = Number(settings.qr_rotation_interval) || CONFIG.DEFAULTS.QR_ROTATION_INTERVAL;
-  var timeWindow = getCurrentTimeWindow_(interval);
-  var token = hmacToken_(settings.event_id, timeWindow);
-  var expiresAt = (timeWindow + 1) * interval;
+
+  var interval =
+    Number(settings.qr_rotation_interval) ||
+    CONFIG.DEFAULTS.QR_ROTATION_INTERVAL;
+
+  var rotationEnabled = !!settings.qr_rotation;
+
+  // Rotation OFF 時固定使用同一個 window，
+  // 因此同一場次會產生固定 QR Token。
+  var timeWindow = rotationEnabled
+    ? getCurrentTimeWindow_(interval)
+    : 0;
+
+  var token = hmacToken_(
+    settings.event_id,
+    timeWindow
+  );
+
+  var expiresAt = rotationEnabled
+    ? (timeWindow + 1) * interval
+    : 0;
 
   return {
     token: token,
     time_window: timeWindow,
     interval: interval,
     expires_at: expiresAt,
-    rotation_enabled: !!settings.qr_rotation
+    rotation_enabled: rotationEnabled
   };
 }
 
 function validateQrToken_(token) {
   var settings = getAllSettings_();
-  if (!settings.qr_rotation) {
-    return { valid: true, reason: 'rotation_off' };
+
+  if (!token) {
+    return {
+      valid: false,
+      reason: 'missing'
+    };
   }
 
-  var interval = Number(settings.qr_rotation_interval) || CONFIG.DEFAULTS.QR_ROTATION_INTERVAL;
+  // Rotation OFF：
+  // 使用固定 window = 0，但仍然必須驗證 token。
+  if (!settings.qr_rotation) {
+    var expectedFixedToken = hmacToken_(
+      settings.event_id,
+      0
+    );
+
+    if (token === expectedFixedToken) {
+      return {
+        valid: true,
+        reason: 'rotation_off'
+      };
+    }
+
+    return {
+      valid: false,
+      reason: 'invalid'
+    };
+  }
+
+  var interval =
+    Number(settings.qr_rotation_interval) ||
+    CONFIG.DEFAULTS.QR_ROTATION_INTERVAL;
   var ttl = Number(settings.token_ttl) || CONFIG.DEFAULTS.TOKEN_TTL;
   var currentWindow = getCurrentTimeWindow_(interval);
-  var windowsToCheck = Math.ceil(ttl / interval) + 1;
+  var windowsToCheck = Math.max(1, Math.ceil(ttl / interval));
 
-  for (var i = 0; i <= windowsToCheck; i++) {
+  for (var i = 0; i < windowsToCheck; i++) {
     var window = currentWindow - i;
     var expected = hmacToken_(settings.event_id, window);
     if (expected === token) {
@@ -36,10 +80,35 @@ function validateQrToken_(token) {
 }
 
 function createFormSession_(token) {
-  var settings = getAllSettings_();
+  var settings = applyAutoCloseDeadline_(getAllSettings_());
+
+  if (settings.event_status !== 'ACTIVE') {
+    return error_(
+      'NO_ACTIVE_EVENT',
+      '目前沒有開放中的候補場次。'
+    );
+  }
+
+  if (!settings.registration_enabled) {
+    return error_(
+      'REGISTRATION_CLOSED',
+      '本場候補登記已結束。'
+    );
+  }
+
+  if (!settings.qr_visible) {
+    return error_(
+      'REGISTRATION_CLOSED',
+      '本場已停止接受新的候補登記。'
+    );
+  }
+
   var validation = validateQrToken_(token);
-  if (!validation.valid && settings.qr_rotation) {
-    return error_('TOKEN_EXPIRED', 'QR Code 已失效，請重新掃描現場目前顯示的 QR Code。');
+  if (!validation.valid) {
+    return error_(
+      'TOKEN_EXPIRED',
+      'QR Code 已失效，請重新掃描現場目前顯示的 QR Code。'
+    );
   }
 
   var sessionId = Utilities.getUuid();
@@ -57,7 +126,7 @@ function createFormSession_(token) {
     expires_at: expiresAt,
     form_session_ttl: ttl,
     mode: settings.mode || CONFIG.DEFAULTS.MODE,
-    deadline: settings.deadline || '',
+    deadline: formatDeadlineForDisplay_(settings),
     show_deadline: !!settings.show_deadline,
     event_name: settings.event_name || '',
     session_name: settings.session_name || '',
@@ -68,7 +137,19 @@ function createFormSession_(token) {
 
 function extendFormSession_(sessionId) {
   if (!sessionId) {
-    return error_('SESSION_EXPIRED', '填寫時間已過期，請重新掃描 QR Code。');
+    return error_(
+      'SESSION_EXPIRED',
+      '填寫時間已過期，請重新掃描 QR Code。'
+    );
+  }
+
+  var settings = applyAutoCloseDeadline_(getAllSettings_());
+
+  if (!settings.registration_enabled) {
+    return error_(
+      'REGISTRATION_CLOSED',
+      '本場候補登記已結束；無法繼續完成登記。'
+    );
   }
 
   var check = validateFormSession_(sessionId);
@@ -76,7 +157,6 @@ function extendFormSession_(sessionId) {
     return error_('SESSION_EXPIRED', '填寫時間已過期，請重新掃描 QR Code。');
   }
 
-  var settings = getAllSettings_();
   var ttl = Number(settings.form_session_ttl) || CONFIG.DEFAULTS.FORM_SESSION_TTL;
   var expiresAt = Math.floor(Date.now() / 1000) + ttl;
   check.session.expires_at = expiresAt;
@@ -129,7 +209,14 @@ function validateFormSession_(sessionId) {
 }
 
 function lockForPinVerification_(formSessionId, name, phone) {
-  var settings = getAllSettings_();
+  var settings = applyAutoCloseDeadline_(getAllSettings_());
+
+  if (!settings.registration_enabled) {
+    return error_(
+      'REGISTRATION_CLOSED',
+      '本場候補登記已結束；無法進入工作人員核驗。'
+    );
+  }
   if ((settings.mode || CONFIG.DEFAULTS.MODE) !== 'counter') {
     return error_('INVALID_MODE', '僅櫃檯核驗模式可使用 PIN 鎖定。');
   }

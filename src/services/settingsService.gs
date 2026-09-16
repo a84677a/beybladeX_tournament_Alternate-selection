@@ -1,3 +1,103 @@
+function getDeadlineDate_(settings) {
+  if (!settings || !settings.deadline) return null;
+
+  var date = new Date(settings.deadline);
+
+  if (isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date;
+}
+
+function formatDeadlineForDisplay_(settings) {
+  var date = getDeadlineDate_(settings);
+  if (!date) return '';
+
+  var tz = 'Asia/Taipei';
+
+  return Utilities.formatDate(
+    date,
+    tz,
+    'MM/dd HH:mm'
+  );
+}
+
+function applyAutoCloseDeadline_(settings) {
+  if (!settings) return settings;
+
+  if (!settings.auto_close_deadline) {
+    return settings;
+  }
+
+  if (!settings.registration_enabled) {
+    return settings;
+  }
+
+  var deadline = getDeadlineDate_(settings);
+
+  if (!deadline) {
+    return settings;
+  }
+
+  var now = new Date();
+
+  if (now.getTime() < deadline.getTime()) {
+    return settings;
+  }
+
+  try {
+    return withScriptLock_(function () {
+      // 取得 Lock 後重新讀取，避免使用其他 request 的舊狀態
+      var latestSettings = getAllSettings_();
+
+      // 可能已經被另一個 request 關閉
+      if (!latestSettings.auto_close_deadline ||
+          !latestSettings.registration_enabled) {
+        return latestSettings;
+      }
+
+      var latestDeadline =
+        getDeadlineDate_(latestSettings);
+
+      if (!latestDeadline) {
+        return latestSettings;
+      }
+
+      var latestNow = new Date();
+
+      if (latestNow.getTime() < latestDeadline.getTime()) {
+        return latestSettings;
+      }
+
+      // 只有第一個成功進入這裡的 request 會真正執行關閉
+      setSettings_({
+        registration_enabled: false,
+        qr_visible: false,
+        display_mode: 'CLOSED'
+      });
+
+      invalidatePublicStateCache_();
+
+      appendAuditLog_('AUTO_CLOSE_DEADLINE', {
+        deadline: latestSettings.deadline,
+        closed_at: latestNow.toISOString()
+      });
+
+      return getAllSettings_();
+    });
+
+  } catch (err) {
+    // 若其他 request 正在執行自動關閉，
+    // 不讓 Display / Candidate 因為搶不到 Lock 直接報錯
+    if (err && err.code === 'BUSY') {
+      return getAllSettings_();
+    }
+
+    throw err;
+  }
+}
+
 function invalidatePublicStateCache_() {
   CacheService.getScriptCache().remove(CONFIG.CACHE_PREFIX + 'public_state');
 }
@@ -25,8 +125,9 @@ function buildPublicStateBody_(settings) {
     registration_enabled: hasActiveEvent && !!settings.registration_enabled,
     qr_visible: hasActiveEvent && !!settings.qr_visible,
     display_mode: hasActiveEvent ? (settings.display_mode || 'CLOSED') : 'CLOSED',
-    deadline: settings.deadline || '',
+    deadline: formatDeadlineForDisplay_(settings),
     show_deadline: !!settings.show_deadline,
+    show_waitlist_count: !!settings.show_waitlist_count,
     mode: settings.mode || CONFIG.DEFAULTS.MODE,
     show_qr_countdown: !!settings.show_qr_countdown,
     display_title: settings.display_title || '',
@@ -60,6 +161,8 @@ function attachVolatilePublicFields_(state, settings) {
 
 function getPublicState_() {
   var settings = getAllSettings_();
+
+  settings = applyAutoCloseDeadline_(settings);
   var cache = CacheService.getScriptCache();
   var cacheKey = CONFIG.CACHE_PREFIX + 'public_state';
   var cached = cache.get(cacheKey);
@@ -125,7 +228,9 @@ function buildLotteryDisplay_(settings) {
 
 function getAdminDashboard_() {
   requireAdmin_();
-  var settings = getAllSettings_();
+
+  var settings =
+    applyAutoCloseDeadline_(getAllSettings_());
   var waitlist = getAllWaitlistRows_().map(toPublicWaitlistRow_);
   var batches = getPublishBatches_();
 

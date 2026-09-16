@@ -35,7 +35,7 @@ function processRegistration_(payload, options) {
     return error_('DUPLICATE', '此資料已完成候補登記，顯示原候補序號。', toSuccessPayload_(precheck.exactDuplicate));
   }
 
-  var settings = getAllSettings_();
+  var settings = applyAutoCloseDeadline_(getAllSettings_());
   if (settings.event_status !== 'ACTIVE') {
     return error_('NO_ACTIVE_EVENT', '目前沒有開放中的候補場次。');
   }
@@ -57,7 +57,10 @@ function processRegistration_(payload, options) {
   }
 
   if (options.requirePin) {
-    var pinResult = verifyStaffPin_(payload.staff_pin);
+    var pinResult = verifyStaffPin_(
+      payload.staff_pin,
+      payload.device_id
+    );
     if (!pinResult.ok) return pinResult;
   }
 
@@ -97,6 +100,16 @@ function processRegistration_(payload, options) {
 
 function finalizeRegistrationInLock_(input) {
   var latestSettings = getAllSettings_();
+
+  // 最終發號前再次確認是否已超過自動截止時間
+  if (latestSettings.auto_close_deadline) {
+    var deadline = getDeadlineDate_(latestSettings);
+
+    if (deadline && new Date().getTime() >= deadline.getTime()) {
+      throw new Error('REGISTRATION_CLOSED');
+    }
+  }
+
   if (!latestSettings.registration_enabled) {
     throw new Error('REGISTRATION_CLOSED');
   }
@@ -147,11 +160,23 @@ function getReceipt_(receiptToken) {
   return success_(toSuccessPayload_(row));
 }
 
-function verifyStaffPin_(pin) {
+function verifyStaffPin_(pin, deviceId) {
   var settings = getAllSettings_();
   var cache = CacheService.getScriptCache();
-  var lockKey = CONFIG.CACHE_PREFIX + 'pin_lock';
-  var attemptKey = CONFIG.CACHE_PREFIX + 'pin_attempts';
+  var deviceKey = String(deviceId || '').trim();
+
+  if (!deviceKey) {
+    return error_(
+      'INVALID_DEVICE_ID',
+      '缺少裝置識別資訊'
+    );
+  }
+
+  var lockKey =
+    CONFIG.CACHE_PREFIX + 'pin_lock_' + deviceKey;
+
+  var attemptKey =
+    CONFIG.CACHE_PREFIX + 'pin_attempts_' + deviceKey;
 
   if (cache.get(lockKey)) {
     return error_('PIN_LOCKED', '驗證碼錯誤次數過多，請於 ' + (settings.pin_lockout_seconds || 30) + ' 秒後再試。');

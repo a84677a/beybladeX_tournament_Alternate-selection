@@ -22,7 +22,9 @@
         <div class="card">
           <h3>現場說明</h3>
           <p id="display-subtitle" class="muted">候補資格以 Server 成功發出唯一候補序號為準。</p>
-          <p>目前候補人數：<strong id="waitlist-count">0</strong></p>
+          <p id="waitlist-count-row">
+            目前候補人數：<strong id="waitlist-count">0</strong>
+          </p>
         </div>
       </div>
     </div>
@@ -63,18 +65,23 @@
     let lastOpenSnapshot = '';
     let lotteryRuntime = null;
 
-    async function post(action, body) {
-      const res = await fetch(WEB_APP_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({ action }, body || {}))
+    function post(action, body) {
+      return new Promise(function (resolve, reject) {
+        google.script.run
+          .withSuccessHandler(function (response) {
+            resolve(response);
+          })
+          .withFailureHandler(function (error) {
+            reject(
+              new Error(
+                error && error.message
+                  ? error.message
+                  : '無法連線至伺服器'
+              )
+            );
+          })
+          .apiCall(action, body || {});
       });
-      const text = await res.text();
-      try {
-        return JSON.parse(text);
-      } catch (e) {
-        throw new Error('伺服器回應格式錯誤，請確認 Web App 已部署最新版本');
-      }
     }
 
     function showScreen(id) {
@@ -103,25 +110,36 @@
         return;
       }
 
-      currentQrUrl = url;
-      container.innerHTML = '';
+      // 先在畫面外建立新的 QR，
+      // 避免先清掉舊 QR 導致閃白。
+      const tempContainer = document.createElement('div');
 
       if (typeof QRCode === 'undefined') {
-        if (url) {
-          const img = document.createElement('img');
-          img.alt = 'QR Code';
-          img.src = 'https://chart.googleapis.com/chart?cht=qr&chs=400x400&chl=' + encodeURIComponent(url);
-          container.appendChild(img);
-        }
+        const img = document.createElement('img');
+        img.alt = 'QR Code';
+        img.src =
+          'https://chart.googleapis.com/chart?cht=qr&chs=400x400&chl=' +
+          encodeURIComponent(url);
+
+        img.onload = function () {
+          container.replaceChildren(img);
+          currentQrUrl = url;
+        };
+
         return;
       }
 
-      new QRCode(container, {
+      new QRCode(tempContainer, {
         text: url,
         width: 400,
         height: 400,
         correctLevel: QRCode.CorrectLevel.M
       });
+
+      // 新 QR 已經完成後，再一次換掉舊 QR。
+      container.replaceChildren(...tempContainer.childNodes);
+
+      currentQrUrl = url;
     }
 
     function formatEventTitle(state) {
@@ -156,15 +174,15 @@
 
     function renderQrCountdown() {
       const countdownEl = document.getElementById('qr-countdown');
+
       if (!qrCountdownMeta) {
         countdownEl.classList.add('hidden');
         return;
       }
 
-      const remain = Math.max(0, qrCountdownMeta.expiresAt - Math.floor(Date.now() / 1000));
       countdownEl.classList.remove('hidden');
       countdownEl.textContent =
-        'QR Code 每 ' + qrCountdownMeta.interval + ' 秒更新一次（約 ' + remain + ' 秒後更新）';
+        'QR Code 每 ' + qrCountdownMeta.interval + ' 秒更新一次';
     }
 
     function startQrCountdown(qr, showCountdown) {
@@ -189,7 +207,6 @@
         expiresAt: qr.expires_at
       };
       renderQrCountdown();
-      qrCountdownTimer = setInterval(renderQrCountdown, 1000);
     }
 
     function openSnapshot(state) {
@@ -198,6 +215,7 @@
         formatEventTitle(state),
         formatStatusText(state, '候補登記開放中'),
         state.waitlist_count || 0,
+        !!state.show_waitlist_count,
         formatSubtitleText(state),
         state.deadline || '',
         !!state.show_deadline,
@@ -290,8 +308,16 @@
       document.getElementById('event-title').textContent = formatEventTitle(state);
       document.querySelector('#screen-open .display-status').textContent =
         formatStatusText(state, '候補登記開放中');
-      document.getElementById('waitlist-count').textContent = state.waitlist_count || 0;
-      document.getElementById('display-subtitle').textContent = formatSubtitleText(state);
+      document.getElementById('waitlist-count').textContent =
+        state.waitlist_count || 0;
+
+      document.getElementById('waitlist-count-row').classList.toggle(
+        'hidden',
+        !state.show_waitlist_count
+      );
+
+      document.getElementById('display-subtitle').textContent =
+        formatSubtitleText(state);
 
       renderDeadline(
         document.getElementById('deadline-text'),
@@ -311,11 +337,20 @@
     function renderProcessing(state) {
       stopQrCountdown();
       showScreen('screen-processing');
-      document.getElementById('event-title-2').textContent = formatEventTitle(state);
+
+      document.getElementById('event-title-2').textContent =
+        formatEventTitle(state);
+
       document.getElementById('status-processing').textContent =
-        formatStatusText(state, '候補作業進行中');
-      document.getElementById('display-subtitle-2').textContent = formatSubtitleText(state);
-      renderDeadline(document.getElementById('deadline-text-2'), state.deadline, state.show_deadline);
+        '候補作業進行中';
+
+      document.getElementById('display-subtitle-2').textContent = '';
+
+      renderDeadline(
+        'deadline-text-2',
+        state.deadline,
+        state.show_deadline
+      );
     }
 
     function renderClosed(state) {

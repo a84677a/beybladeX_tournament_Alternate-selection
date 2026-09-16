@@ -21,7 +21,10 @@ function exportSpreadsheetCopy_(eventLabel) {
     file_id: fileId,
     name: copyName,
     download_url: copy.getUrl(),
-    download_xlsx_url: 'https://docs.google.com/spreadsheets/d/' + fileId + '/export?format=xlsx'
+    download_xlsx_url:
+      'https://docs.google.com/spreadsheets/d/' +
+      fileId +
+      '/export?format=xlsx'
   };
 }
 
@@ -30,12 +33,20 @@ function getDefaultOperationalSettings_() {
     registration_enabled: false,
     qr_visible: false,
     display_mode: 'CLOSED',
+
     next_waitlist_number: 1,
+
     lottery_status: 'NONE',
     lottery_locked: false,
     active_batch_id: '',
     lottery_id: '',
+
     deadline: '',
+    show_deadline: true,
+    auto_close_deadline: false,
+    show_waitlist_count: false,
+    show_qr_countdown: true,
+
     display_title: '',
     display_subtitle: ''
   };

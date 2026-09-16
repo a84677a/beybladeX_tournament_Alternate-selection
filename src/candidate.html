@@ -78,6 +78,24 @@
     const UI = window.WaitlistUI;
     const INITIAL_TOKEN = <?!= initialToken ?>;
     const INITIAL_RECEIPT = <?!= initialReceipt ?>;
+    const DEVICE_ID_KEY = 'waitlist_candidate_device_id';
+
+    function getDeviceId() {
+      let id = localStorage.getItem(DEVICE_ID_KEY);
+
+      if (!id) {
+        id =
+          'dev_' +
+          Date.now() +
+          '_' +
+          Math.random().toString(36).slice(2);
+
+        localStorage.setItem(DEVICE_ID_KEY, id);
+      }
+
+      return id;
+    }
+
     let token = INITIAL_TOKEN;
     let receipt = INITIAL_RECEIPT;
 
@@ -89,18 +107,23 @@
       ? crypto.randomUUID()
       : ('req_' + Date.now() + '_' + Math.random().toString(36).slice(2));
 
-    async function post(action, body) {
-      const res = await fetch(WEB_APP_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({ action }, body || {}))
+    function post(action, body) {
+      return new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(function(response) {
+            resolve(response);
+          })
+          .withFailureHandler(function(error) {
+            reject(
+              new Error(
+                error && error.message
+                  ? error.message
+                  : '無法連線至伺服器'
+              )
+            );
+          })
+          .apiCall(action, body || {});
       });
-      const text = await res.text();
-      try {
-        return JSON.parse(text);
-      } catch (e) {
-        throw new Error('伺服器回應格式錯誤，請確認 Web App 已部署最新版本');
-      }
     }
 
     function setFormEnabled(enabled) {
@@ -173,7 +196,31 @@
 
       const res = await post('validateToken', { token });
       if (!res.ok) {
-        showError('QR 已失效', res.error?.message || '請重新掃描');
+        const code = res.error?.code;
+
+        if (
+          code === 'REGISTRATION_CLOSED' ||
+          code === 'NO_ACTIVE_EVENT'
+        ) {
+          showError(
+            '候補登記已結束',
+            res.error?.message || '本場候補登記目前未開放。'
+          );
+          return;
+        }
+
+        if (code === 'TOKEN_EXPIRED') {
+          showError(
+            'QR 已失效',
+            res.error?.message || '請重新掃描現場目前顯示的 QR Code。'
+          );
+          return;
+        }
+
+        showError(
+          '無法完成驗證',
+          res.error?.message || '請稍後再試。'
+        );
         return;
       }
 
@@ -269,6 +316,7 @@
         form_session_id: formSessionId,
         name: pending.name,
         phone: pending.phone
+        device_id: getDeviceId()
       };
       if (staffPin) payload.staff_pin = staffPin;
 
