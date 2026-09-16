@@ -39,8 +39,8 @@ beybladeX_tournament_Alternate-selection/
 │   ├── display.html
 │   ├── candidate.html
 │   ├── admin.html
-│   └── styles.html
-├── appsscript.json
+│   ├── styles.html
+│   └── appsscript.json        # Apps Script manifest（clasp push 用）
 ├── .clasp.json.example
 └── .env.example                # Script Properties 設定說明
 ```
@@ -60,7 +60,8 @@ beybladeX_tournament_Alternate-selection/
 npm install -g @google/clasp
 clasp login
 # 在本 repo 根目錄（含 .clasp.json 處）執行：
-clasp create --type standalone --title "BeybladeX 候補系統"
+# 必須加 --rootDir src，manifest 才會寫入 src/appsscript.json（與 rootDir 一致）
+clasp create --type standalone --title "BeybladeX 候補系統" --rootDir src
 # 或複製 .clasp.json.example → .clasp.json，填入 scriptId
 # 記得到 https://script.google.com/home/usersettings 開啟 Apps Script API
 clasp push
@@ -162,7 +163,8 @@ clasp push --force
 **注意：**
 
 - 必須在本 repo 根目錄（含 `.clasp.json`）執行 `clasp`；若在上一層目錄會出現 `Project settings not found`
-- `.clasp.json` 的 `rootDir` 應為 `"src"`（本專案原始碼目錄）
+- `.clasp.json` 的 `rootDir` 應為 `"src"`（本專案原始碼目錄）；`appsscript.json` 也在 `src/`，根目錄若有多餘的 manifest 可刪除
+- `clasp create` 請加 `--rootDir src`，否則 manifest 會落在 repo 根目錄而 `clasp push` 不會推送
 - `clasp login` 後需至 [Apps Script API 設定](https://script.google.com/home/usersettings) 開啟 API 存取
 - `clasp push` 後若只推送 1 個檔案，代表 `.claspignore` 設定有誤；正常應推送約 22 個檔案（含 `main.gs`）
 - 若出現「找不到 doGet」，通常是程式未推送成功，或部署版本未更新
