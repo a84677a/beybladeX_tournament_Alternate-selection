@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <title>候補登記 Display</title>
   <?!= include('styles'); ?>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
   <div class="container" id="app">
@@ -12,7 +14,7 @@
       <div class="display-status">候補登記開放中</div>
       <div class="grid-2">
         <div class="card">
-          <div class="qr-box"><img id="qr-image" alt="QR Code"></div>
+          <div class="qr-box">  <div id="qr-code"></div></div>
           <p class="muted" style="text-align:center;">請掃描 QR Code<br>填寫真實姓名與手機號碼</p>
           <p id="deadline-text" class="muted" style="text-align:center;"></p>
           <p id="qr-countdown" class="muted hidden" style="text-align:center;"></p>
@@ -52,6 +54,7 @@
     let lastState = null;
     let carouselTimer = null;
     let carouselPage = 0;
+    let currentQrUrl = '';
 
     function post(action, body) {
       return fetch(WEB_APP_URL, {
@@ -65,6 +68,35 @@
       ['screen-open', 'screen-processing', 'screen-closed', 'screen-lottery'].forEach(s => {
         document.getElementById(s).classList.toggle('hidden', s !== id);
       });
+    }
+
+    function renderQr(url) {
+     const container = document.getElementById('qr-code');
+
+      if (!container) {
+        console.error('QR container not found');
+        return;
+      }
+
+      if (!url) {
+       container.innerHTML = '';
+       currentQrUrl = '';
+       return;
+     }
+
+     if (url === currentQrUrl) {
+       return;
+     }
+
+     currentQrUrl = url;
+     container.innerHTML = '';
+
+     new QRCode(container, {
+        text: url,
+        width: 400,
+        height: 400,
+        correctLevel: QRCode.CorrectLevel.M
+     });
     }
 
     function formatEventTitle(state) {
@@ -82,22 +114,41 @@
     }
 
     function renderOpen(state) {
-      showScreen('screen-open');
+     showScreen('screen-open');
+
       document.getElementById('event-title').textContent = formatEventTitle(state);
       document.getElementById('waitlist-count').textContent = state.waitlist_count || 0;
       document.getElementById('display-subtitle').textContent = state.display_subtitle || '';
-      renderDeadline(document.getElementById('deadline-text'), state.deadline, state.show_deadline);
 
+      renderDeadline(
+        document.getElementById('deadline-text'),
+        state.deadline,
+        state.show_deadline
+      );
+
+      // 顯示 / 更新 QR Code
       if (state.qr_visible && state.qr && state.qr.url) {
-        document.getElementById('qr-image').src =
-          'https://chart.googleapis.com/chart?cht=qr&chs=400x400&chl=' + encodeURIComponent(state.qr.url);
+        renderQr(state.qr.url);
+      } else {
+        renderQr('');
       }
 
       const countdownEl = document.getElementById('qr-countdown');
+
       if (state.qr && state.qr.rotation_enabled && state.show_qr_countdown) {
         countdownEl.classList.remove('hidden');
-        const remain = Math.max(0, state.qr.expires_at - Math.floor(Date.now() / 1000));
-        countdownEl.textContent = 'QR Code 每 ' + state.qr.interval + ' 秒更新一次（約 ' + remain + ' 秒後更新）';
+
+        const remain = Math.max(
+          0,
+          state.qr.expires_at - Math.floor(Date.now() / 1000)
+        );
+
+        countdownEl.textContent =
+          'QR Code 每 ' +
+          state.qr.interval +
+          ' 秒更新一次（約 ' +
+          remain +
+          ' 秒後更新）';
       } else {
         countdownEl.classList.add('hidden');
       }

@@ -72,9 +72,8 @@
   <script>
     const WEB_APP_URL = '<?= webAppUrl ?>';
     const UI = window.WaitlistUI;
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
-    const receipt = params.get('receipt');
+    let token = '';
+    let receipt = '';
 
     let formSessionId = '';
     let mode = 'general';
@@ -212,7 +211,12 @@
       }
     }
 
-    initSession();
+    google.script.url.getLocation(function(location) {
+      token = location.parameter.token || '';
+      receipt = location.parameter.receipt || '';
+
+      initSession();
+    });
   </script>
 </body>
 </html>
