@@ -58,7 +58,39 @@ function createFormSession_(token) {
     form_session_ttl: ttl,
     mode: settings.mode || CONFIG.DEFAULTS.MODE,
     deadline: settings.deadline || '',
-    show_deadline: !!settings.show_deadline
+    show_deadline: !!settings.show_deadline,
+    event_name: settings.event_name || '',
+    session_name: settings.session_name || '',
+    display_title: settings.display_title || '',
+    display_subtitle: settings.display_subtitle || ''
+  });
+}
+
+function extendFormSession_(sessionId) {
+  if (!sessionId) {
+    return error_('SESSION_EXPIRED', '填寫時間已過期，請重新掃描 QR Code。');
+  }
+
+  var check = validateFormSession_(sessionId);
+  if (!check.valid) {
+    return error_('SESSION_EXPIRED', '填寫時間已過期，請重新掃描 QR Code。');
+  }
+
+  var settings = getAllSettings_();
+  var ttl = Number(settings.form_session_ttl) || CONFIG.DEFAULTS.FORM_SESSION_TTL;
+  var expiresAt = Math.floor(Date.now() / 1000) + ttl;
+  check.session.expires_at = expiresAt;
+
+  var cache = CacheService.getScriptCache();
+  cache.put(
+    CONFIG.CACHE_PREFIX + 'session_' + sessionId,
+    JSON.stringify(check.session),
+    ttl
+  );
+
+  return success_({
+    form_session_id: sessionId,
+    expires_at: expiresAt
   });
 }
 

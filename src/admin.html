@@ -120,7 +120,13 @@
       <details>
         <summary>展開進階設定</summary>
         <div class="grid-2" style="margin-top:16px;">
-          <div class="field"><label>QR Rotation</label><select id="set-qr-rotation"><option value="true">ON</option><option value="false">OFF</option></select></div>
+          <div class="field field-switch">
+            <label for="set-qr-rotation">QR Rotation</label>
+            <label class="switch">
+              <input id="set-qr-rotation" type="checkbox">
+              <span class="switch-slider"></span>
+            </label>
+          </div>
           <div class="field"><label>輪換間隔（秒）</label><input id="set-qr-interval" type="number"></div>
           <div class="field"><label>Token TTL（秒）</label><input id="set-token-ttl" type="number"></div>
           <div class="field"><label>填表有效時間（秒）</label><input id="set-form-ttl" type="number"></div>
@@ -317,7 +323,7 @@
       document.getElementById('set-display-title').value = s.display_title || '';
       document.getElementById('set-display-subtitle').value = s.display_subtitle || '';
       document.getElementById('set-mode').value = s.mode || 'general';
-      document.getElementById('set-qr-rotation').value = String(!!s.qr_rotation);
+      document.getElementById('set-qr-rotation').checked = !!s.qr_rotation;
       document.getElementById('set-qr-interval').value = s.qr_rotation_interval || 20;
       document.getElementById('set-token-ttl').value = s.token_ttl || 40;
       document.getElementById('set-form-ttl').value = s.form_session_ttl || 90;
@@ -399,7 +405,7 @@
       UI.runWithLoading(btn, '儲存中…', async () => {
         const settings = {
           mode: document.getElementById('set-mode').value,
-          qr_rotation: document.getElementById('set-qr-rotation').value === 'true',
+          qr_rotation: document.getElementById('set-qr-rotation').checked,
           qr_rotation_interval: Number(document.getElementById('set-qr-interval').value),
           token_ttl: Number(document.getElementById('set-token-ttl').value),
           form_session_ttl: Number(document.getElementById('set-form-ttl').value),

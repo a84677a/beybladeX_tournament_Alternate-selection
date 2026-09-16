@@ -27,8 +27,9 @@
 
     <div id="screen-processing" class="hidden">
       <div class="display-title" id="event-title-2">活動名稱｜場次</div>
-      <div class="display-status">候補作業進行中</div>
+      <div class="display-status" id="status-processing">候補作業進行中</div>
       <div class="card">
+        <p id="display-subtitle-2" class="muted" style="text-align:center;"></p>
         <p id="deadline-text-2" class="muted" style="text-align:center;"></p>
       </div>
     </div>
@@ -36,6 +37,7 @@
     <div id="screen-closed">
       <div class="display-title" id="event-title-3">候補登記系統</div>
       <div class="display-status" id="closed-status">尚未建立場次</div>
+      <p id="display-subtitle-3" class="muted" style="text-align:center;margin-top:16px;"></p>
     </div>
 
     <div id="screen-lottery" class="hidden">
@@ -67,10 +69,22 @@
       });
     }
 
+    var DEFAULT_SUBTITLE = '候補資格以 Server 成功發出唯一候補序號為準。';
+
     function formatEventTitle(state) {
       if (!state.has_active_event) return '候補登記系統';
       const title = [state.event_name, state.session_name].filter(Boolean).join('｜');
       return title || '候補登記';
+    }
+
+    function formatStatusText(state, fallback) {
+      const custom = (state.display_title || '').trim();
+      return custom || fallback;
+    }
+
+    function formatSubtitleText(state) {
+      const custom = (state.display_subtitle || '').trim();
+      return custom || DEFAULT_SUBTITLE;
     }
 
     function renderDeadline(text, deadline, show) {
@@ -84,8 +98,10 @@
     function renderOpen(state) {
       showScreen('screen-open');
       document.getElementById('event-title').textContent = formatEventTitle(state);
+      document.querySelector('#screen-open .display-status').textContent =
+        formatStatusText(state, '候補登記開放中');
       document.getElementById('waitlist-count').textContent = state.waitlist_count || 0;
-      document.getElementById('display-subtitle').textContent = state.display_subtitle || '';
+      document.getElementById('display-subtitle').textContent = formatSubtitleText(state);
       renderDeadline(document.getElementById('deadline-text'), state.deadline, state.show_deadline);
 
       if (state.qr_visible && state.qr && state.qr.url) {
@@ -106,14 +122,18 @@
     function renderProcessing(state) {
       showScreen('screen-processing');
       document.getElementById('event-title-2').textContent = formatEventTitle(state);
+      document.getElementById('status-processing').textContent =
+        formatStatusText(state, '候補作業進行中');
+      document.getElementById('display-subtitle-2').textContent = formatSubtitleText(state);
       renderDeadline(document.getElementById('deadline-text-2'), state.deadline, state.show_deadline);
     }
 
     function renderClosed(state) {
       showScreen('screen-closed');
       document.getElementById('event-title-3').textContent = formatEventTitle(state);
-      document.getElementById('closed-status').textContent =
-        state.has_active_event ? '候補登記已關閉' : '尚未建立場次';
+      const closedFallback = state.has_active_event ? '候補登記已關閉' : '尚未建立場次';
+      document.getElementById('closed-status').textContent = formatStatusText(state, closedFallback);
+      document.getElementById('display-subtitle-3').textContent = formatSubtitleText(state);
     }
 
     function renderLottery(state) {

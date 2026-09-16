@@ -8,8 +8,11 @@
 <body>
   <div class="container" id="app">
     <div id="screen-form" class="card">
-      <h1>候補登記</h1>
+      <h1 id="page-title">候補登記</h1>
+      <p id="display-title" class="muted"></p>
+      <p id="display-subtitle" class="muted"></p>
       <p id="deadline-info" class="muted"></p>
+      <p id="session-loading" class="muted">正在驗證 QR Code…</p>
       <div class="field">
         <label for="name">真實姓名</label>
         <input id="name" type="text" autocomplete="name" placeholder="王小明">
@@ -30,6 +33,7 @@
         <button class="btn btn-secondary" id="btn-back" style="flex:1">返回修改</button>
         <button class="btn btn-primary" id="btn-submit" style="flex:1">確認無誤</button>
       </div>
+      <p id="review-error" class="muted" style="color:#f87171;margin-top:12px;"></p>
     </div>
 
     <div id="screen-pin" class="warning-screen hidden">
@@ -79,14 +83,43 @@
     let formSessionId = '';
     let mode = 'general';
     let pending = null;
-    let requestId = crypto.randomUUID();
+    let sessionReady = false;
+    let requestId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : ('req_' + Date.now() + '_' + Math.random().toString(36).slice(2));
 
-    function post(action, body) {
-      return fetch(WEB_APP_URL, {
+    async function post(action, body) {
+      const res = await fetch(WEB_APP_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(Object.assign({ action }, body || {}))
-      }).then(r => r.json());
+      });
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        throw new Error('伺服器回應格式錯誤，請確認 Web App 已部署最新版本');
+      }
+    }
+
+    function setFormEnabled(enabled) {
+      document.getElementById('name').disabled = !enabled;
+      document.getElementById('phone').disabled = !enabled;
+      document.getElementById('btn-confirm').disabled = !enabled;
+    }
+
+    function applyDisplayInfo(data) {
+      if (!data) return;
+      const eventLabel = [data.event_name, data.session_name].filter(Boolean).join('｜');
+      if (eventLabel) {
+        document.getElementById('page-title').textContent = eventLabel;
+      }
+      const titleEl = document.getElementById('display-title');
+      const subtitleEl = document.getElementById('display-subtitle');
+      titleEl.textContent = data.display_title || '';
+      subtitleEl.textContent = data.display_subtitle || '';
+      titleEl.classList.toggle('hidden', !data.display_title);
+      subtitleEl.classList.toggle('hidden', !data.display_subtitle);
     }
 
     function show(id) {
@@ -145,16 +178,35 @@
 
       formSessionId = res.data.form_session_id;
       mode = res.data.mode || 'general';
+      sessionReady = true;
+      applyDisplayInfo(res.data);
       if (res.data.show_deadline && res.data.deadline) {
         document.getElementById('deadline-info').textContent = '候補登記截止時間：' + res.data.deadline;
       }
     }
 
-    document.getElementById('btn-confirm').addEventListener('click', () => {
+    async function ensureFormSession() {
+      if (!formSessionId) {
+        throw new Error('QR 驗證尚未完成，請稍候或重新掃描');
+      }
+      const res = await post('extendFormSession', { form_session_id: formSessionId });
+      if (!res.ok) {
+        throw new Error(res.error?.message || '填寫時間已過期，請重新掃描 QR Code');
+      }
+      formSessionId = res.data.form_session_id;
+    }
+
+    document.getElementById('btn-confirm').addEventListener('click', async () => {
+      document.getElementById('form-error').textContent = '';
       try {
+        if (!sessionReady) {
+          throw new Error('QR 驗證尚未完成，請稍候');
+        }
         pending = validateForm();
+        await ensureFormSession();
         document.getElementById('review-name').textContent = pending.name;
         document.getElementById('review-phone').textContent = pending.phone;
+        document.getElementById('review-error').textContent = '';
         show('screen-review');
       } catch (e) {
         document.getElementById('form-error').textContent = e.message;
@@ -172,17 +224,25 @@
         show('screen-pin');
         return;
       }
-      UI.runWithLoading(btn, '登記中…', () => submitRegistration(null));
+      UI.runWithLoading(btn, '登記中…', () => submitRegistration(null))
+        .catch(e => {
+          document.getElementById('review-error').textContent = e.message || '登記失敗，請稍後再試';
+        });
     });
 
     document.getElementById('btn-pin-submit').addEventListener('click', () => {
       const btn = document.getElementById('btn-pin-submit');
       if (btn.disabled) return;
       const pin = document.getElementById('staff-pin').value;
-      UI.runWithLoading(btn, '登記中…', () => submitRegistration(pin));
+      UI.runWithLoading(btn, '登記中…', () => submitRegistration(pin))
+        .catch(e => {
+          document.getElementById('pin-error').textContent = e.message || '登記失敗，請稍後再試';
+        });
     });
 
     async function submitRegistration(staffPin) {
+      await ensureFormSession();
+
       const payload = {
         request_id: requestId,
         form_session_id: formSessionId,
@@ -208,11 +268,25 @@
       if (mode === 'counter') {
         document.getElementById('pin-error').textContent = msg;
       } else {
-        showError('登記失敗', msg);
+        document.getElementById('review-error').textContent = msg;
       }
     }
 
-    initSession();
+    async function bootstrap() {
+      setFormEnabled(false);
+      try {
+        await initSession();
+      } catch (e) {
+        showError('連線失敗', e.message || '無法連線至伺服器，請重新掃描 QR Code');
+      } finally {
+        document.getElementById('session-loading').classList.add('hidden');
+        if (sessionReady) {
+          setFormEnabled(true);
+        }
+      }
+    }
+
+    bootstrap();
   </script>
 </body>
 </html>
