@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <title>候補登記 Display</title>
   <?!= include('styles'); ?>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
   <div class="container" id="app">
@@ -12,7 +14,7 @@
       <div class="display-status">候補登記開放中</div>
       <div class="grid-2">
         <div class="card">
-          <div class="qr-box"><img id="qr-image" alt="QR Code"></div>
+          <div class="qr-box"><div id="qr-code"></div></div>
           <p class="muted" style="text-align:center;">請掃描 QR Code<br>填寫真實姓名與手機號碼</p>
           <p id="deadline-text" class="muted" style="text-align:center;"></p>
           <p id="qr-countdown" class="muted hidden" style="text-align:center;"></p>
@@ -53,18 +55,26 @@
     const INITIAL_STATE = <?!= initialStateJson ?>;
     let lastState = null;
     let carouselTimer = null;
-    let carouselPage = 0;
     let pollTimer = null;
     let pollIntervalMs = 10000;
     let qrCountdownTimer = null;
     let qrCountdownMeta = null;
+    let currentQrUrl = '';
+    let lastOpenSnapshot = '';
+    let lotteryRuntime = null;
 
-    function post(action, body) {
-      return fetch(WEB_APP_URL, {
+    async function post(action, body) {
+      const res = await fetch(WEB_APP_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(Object.assign({ action }, body || {}))
-      }).then(r => r.json());
+      });
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        throw new Error('伺服器回應格式錯誤，請確認 Web App 已部署最新版本');
+      }
     }
 
     function showScreen(id) {
@@ -74,6 +84,45 @@
     }
 
     var DEFAULT_SUBTITLE = '候補資格以 Server 成功發出唯一候補序號為準。';
+
+    function renderQr(url) {
+      const container = document.getElementById('qr-code');
+
+      if (!container) {
+        console.error('QR container not found');
+        return;
+      }
+
+      if (!url) {
+        container.innerHTML = '';
+        currentQrUrl = '';
+        return;
+      }
+
+      if (url === currentQrUrl) {
+        return;
+      }
+
+      currentQrUrl = url;
+      container.innerHTML = '';
+
+      if (typeof QRCode === 'undefined') {
+        if (url) {
+          const img = document.createElement('img');
+          img.alt = 'QR Code';
+          img.src = 'https://chart.googleapis.com/chart?cht=qr&chs=400x400&chl=' + encodeURIComponent(url);
+          container.appendChild(img);
+        }
+        return;
+      }
+
+      new QRCode(container, {
+        text: url,
+        width: 400,
+        height: 400,
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    }
 
     function formatEventTitle(state) {
       if (!state.has_active_event) return '候補登記系統';
@@ -119,12 +168,22 @@
     }
 
     function startQrCountdown(qr, showCountdown) {
-      stopQrCountdown();
       if (!qr || !qr.rotation_enabled || !showCountdown) {
-        renderQrCountdown();
+        if (qrCountdownMeta) {
+          stopQrCountdown();
+          renderQrCountdown();
+        }
         return;
       }
 
+      if (qrCountdownMeta &&
+          qrCountdownMeta.interval === qr.interval &&
+          qrCountdownMeta.expiresAt === qr.expires_at &&
+          qrCountdownTimer) {
+        return;
+      }
+
+      stopQrCountdown();
       qrCountdownMeta = {
         interval: qr.interval,
         expiresAt: qr.expires_at
@@ -133,18 +192,117 @@
       qrCountdownTimer = setInterval(renderQrCountdown, 1000);
     }
 
+    function openSnapshot(state) {
+      const qr = state.qr || {};
+      return [
+        formatEventTitle(state),
+        formatStatusText(state, '候補登記開放中'),
+        state.waitlist_count || 0,
+        formatSubtitleText(state),
+        state.deadline || '',
+        !!state.show_deadline,
+        !!state.qr_visible,
+        qr.url || '',
+        qr.expires_at || 0,
+        qr.interval || 0,
+        !!qr.rotation_enabled,
+        !!state.show_qr_countdown
+      ].join('\0');
+    }
+
+    function getLotteryKey(lottery) {
+      if (!lottery) return '';
+      const entries = lottery.entries || (lottery.numbers || []).map(function (no) {
+        return { waitlist_no: no };
+      });
+      return [
+        lottery.batch_id || '',
+        lottery.display_title || '',
+        lottery.results_per_page || 16,
+        lottery.results_columns || 0,
+        lottery.carousel_seconds || 5,
+        !!lottery.show_page_number,
+        !!lottery.show_random_rank,
+        JSON.stringify(entries)
+      ].join('\0');
+    }
+
+    function buildLotteryPages(lottery) {
+      const perPage = lottery.results_per_page || 16;
+      const entries = lottery.entries || lottery.numbers.map(function (no) {
+        return { waitlist_no: no };
+      });
+      const pages = [];
+      for (let i = 0; i < entries.length; i += perPage) {
+        pages.push(entries.slice(i, i + perPage));
+      }
+      if (pages.length === 0) pages.push([]);
+      return pages;
+    }
+
+    function renderLotteryPage() {
+      if (!lotteryRuntime) return;
+      const lottery = lotteryRuntime.lottery;
+      const pages = lotteryRuntime.pages;
+      const grid = document.getElementById('lottery-grid');
+      grid.innerHTML = '';
+      if (lottery.results_columns > 0) {
+        grid.style.gridTemplateColumns = 'repeat(' + lottery.results_columns + ', 1fr)';
+      } else {
+        grid.style.gridTemplateColumns = '';
+      }
+      pages[lotteryRuntime.carouselPage].forEach(function (entry) {
+        const div = document.createElement('div');
+        div.className = 'lottery-no';
+        if (lottery.show_random_rank && entry.random_rank) {
+          div.innerHTML = '<span class="lottery-rank">' + entry.random_rank + '</span>' +
+            '<span class="lottery-waitlist-no">' + entry.waitlist_no + '</span>';
+        } else {
+          div.textContent = entry.waitlist_no;
+        }
+        grid.appendChild(div);
+      });
+      const pageEl = document.getElementById('lottery-page');
+      if (lottery.show_page_number && pages.length > 1) {
+        pageEl.textContent = '第 ' + (lotteryRuntime.carouselPage + 1) + ' / ' + pages.length + ' 頁';
+      } else {
+        pageEl.textContent = '請確認您的候補號碼';
+      }
+    }
+
+    function startLotteryCarousel() {
+      clearInterval(carouselTimer);
+      if (!lotteryRuntime || lotteryRuntime.pages.length <= 1) return;
+      carouselTimer = setInterval(function () {
+        lotteryRuntime.carouselPage = (lotteryRuntime.carouselPage + 1) % lotteryRuntime.pages.length;
+        renderLotteryPage();
+      }, (lotteryRuntime.lottery.carousel_seconds || 5) * 1000);
+    }
+
     function renderOpen(state) {
+      const snap = openSnapshot(state);
+      if (snap === lastOpenSnapshot) {
+        return;
+      }
+      lastOpenSnapshot = snap;
       showScreen('screen-open');
+
       document.getElementById('event-title').textContent = formatEventTitle(state);
       document.querySelector('#screen-open .display-status').textContent =
         formatStatusText(state, '候補登記開放中');
       document.getElementById('waitlist-count').textContent = state.waitlist_count || 0;
       document.getElementById('display-subtitle').textContent = formatSubtitleText(state);
-      renderDeadline(document.getElementById('deadline-text'), state.deadline, state.show_deadline);
+
+      renderDeadline(
+        document.getElementById('deadline-text'),
+        state.deadline,
+        state.show_deadline
+      );
 
       if (state.qr_visible && state.qr && state.qr.url) {
-        document.getElementById('qr-image').src =
-          'https://chart.googleapis.com/chart?cht=qr&chs=400x400&chl=' + encodeURIComponent(state.qr.url);
+        renderQr(state.qr.url);
+      } else {
+        renderQr('');
       }
 
       startQrCountdown(state.qr, state.show_qr_countdown);
@@ -177,59 +335,43 @@
       if (!lottery) return;
 
       document.getElementById('lottery-title').textContent = lottery.display_title;
-      const perPage = lottery.results_per_page || 16;
-      const entries = (lottery.entries || lottery.numbers.map(no => ({ waitlist_no: no })));
-      const pages = [];
-      for (let i = 0; i < entries.length; i += perPage) {
-        pages.push(entries.slice(i, i + perPage));
-      }
-      if (pages.length === 0) pages.push([]);
-
-      function renderPage() {
-        const grid = document.getElementById('lottery-grid');
-        grid.innerHTML = '';
-        if (lottery.results_columns > 0) {
-          grid.style.gridTemplateColumns = 'repeat(' + lottery.results_columns + ', 1fr)';
-        } else {
-          grid.style.gridTemplateColumns = '';
-        }
-        pages[carouselPage].forEach(entry => {
-          const div = document.createElement('div');
-          div.className = 'lottery-no';
-          if (lottery.show_random_rank && entry.random_rank) {
-            div.innerHTML = '<span class="lottery-rank">' + entry.random_rank + '</span>' +
-              '<span class="lottery-waitlist-no">' + entry.waitlist_no + '</span>';
-          } else {
-            div.textContent = entry.waitlist_no;
-          }
-          grid.appendChild(div);
-        });
-        const pageEl = document.getElementById('lottery-page');
-        if (lottery.show_page_number && pages.length > 1) {
-          pageEl.textContent = '第 ' + (carouselPage + 1) + ' / ' + pages.length + ' 頁';
-        } else {
-          pageEl.textContent = '請確認您的候補號碼';
-        }
+      const key = getLotteryKey(lottery);
+      if (lotteryRuntime && lotteryRuntime.key === key) {
+        return;
       }
 
-      clearInterval(carouselTimer);
-      carouselPage = 0;
-      renderPage();
-      if (pages.length > 1) {
-        carouselTimer = setInterval(() => {
-          carouselPage = (carouselPage + 1) % pages.length;
-          renderPage();
-        }, (lottery.carousel_seconds || 5) * 1000);
-      }
+      lotteryRuntime = {
+        key: key,
+        lottery: lottery,
+        pages: buildLotteryPages(lottery),
+        carouselPage: 0
+      };
+      renderLotteryPage();
+      startLotteryCarousel();
+    }
+
+    function getViewMode(state) {
+      const mode = state.display_mode || 'CLOSED';
+      if (mode === 'LOTTERY_RESULT') return 'lottery';
+      if (!state.registration_enabled) return 'closed';
+      if (state.registration_enabled && state.qr_visible) return 'open';
+      if (state.registration_enabled && !state.qr_visible) return 'processing';
+      return 'closed';
     }
 
     function renderState(state) {
+      const view = getViewMode(state);
+      if (lastState && getViewMode(lastState) !== view) {
+        lastOpenSnapshot = '';
+        lotteryRuntime = null;
+        clearInterval(carouselTimer);
+        carouselTimer = null;
+      }
       lastState = state;
-      const mode = state.display_mode || 'CLOSED';
-      if (mode === 'LOTTERY_RESULT') return renderLottery(state);
-      if (!state.registration_enabled) return renderClosed(state);
-      if (state.registration_enabled && state.qr_visible) return renderOpen(state);
-      if (state.registration_enabled && !state.qr_visible) return renderProcessing(state);
+      if (view === 'lottery') return renderLottery(state);
+      if (view === 'closed') return renderClosed(state);
+      if (view === 'open') return renderOpen(state);
+      if (view === 'processing') return renderProcessing(state);
       return renderClosed(state);
     }
 

@@ -76,9 +76,10 @@
   <script>
     const WEB_APP_URL = '<?= webAppUrl ?>';
     const UI = window.WaitlistUI;
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
-    const receipt = params.get('receipt');
+    const INITIAL_TOKEN = <?!= initialToken ?>;
+    const INITIAL_RECEIPT = <?!= initialReceipt ?>;
+    let token = INITIAL_TOKEN;
+    let receipt = INITIAL_RECEIPT;
 
     let formSessionId = '';
     let mode = 'general';
@@ -306,7 +307,26 @@
       }
     }
 
-    bootstrap();
+    function startApp() {
+      if (INITIAL_TOKEN || INITIAL_RECEIPT) {
+        bootstrap();
+        return;
+      }
+      if (typeof google !== 'undefined' && google.script && google.script.url) {
+        google.script.url.getLocation(function(location) {
+          token = location.parameter.token || '';
+          receipt = location.parameter.receipt || '';
+          bootstrap();
+        });
+        return;
+      }
+      const params = new URLSearchParams(window.location.search);
+      token = params.get('token') || '';
+      receipt = params.get('receipt') || '';
+      bootstrap();
+    }
+
+    startApp();
   </script>
 </body>
 </html>

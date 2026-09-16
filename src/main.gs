@@ -4,18 +4,21 @@ function doGet(e) {
 
   switch (page) {
     case 'candidate':
-      return renderPage_('candidate', '候補登記');
+      return renderPage_('candidate', '候補登記', e);
     case 'admin':
-      return renderPage_('admin', '候補系統管理');
+      return renderPage_('admin', '候補系統管理', e);
     case 'display':
     default:
-      return renderPage_('display', '候補登記 Display');
+      return renderPage_('display', '候補登記 Display', e);
   }
 }
 
-function renderPage_(filename, title) {
+function renderPage_(filename, title, e) {
+  e = e || {};
   var template = HtmlService.createTemplateFromFile(filename);
   template.webAppUrl = getWebAppUrl();
+  template.initialToken = JSON.stringify((e.parameter && e.parameter.token) || '');
+  template.initialReceipt = JSON.stringify((e.parameter && e.parameter.receipt) || '');
   template.initialStateJson = 'null';
   if (filename === 'display') {
     try {
