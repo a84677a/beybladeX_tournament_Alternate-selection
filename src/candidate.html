@@ -74,7 +74,6 @@
 
   <?!= include('client-utils'); ?>
   <script>
-    const WEB_APP_URL = '<?= webAppUrl ?>';
     const UI = window.WaitlistUI;
     const INITIAL_TOKEN = <?!= initialToken ?>;
     const INITIAL_RECEIPT = <?!= initialReceipt ?>;
@@ -159,12 +158,25 @@
       show('screen-error');
     }
 
+    function persistReceiptInUrl(receiptToken) {
+      receipt = receiptToken;
+      token = '';
+      const query = '?page=candidate&receipt=' + encodeURIComponent(receiptToken);
+      try {
+        history.replaceState({}, '', query);
+      } catch (e) {
+        // GAS sandbox runs on googleusercontent.com; absolute script.google.com URLs fail.
+      }
+    }
+
     function showSuccess(data) {
       document.getElementById('success-no').textContent = data.waitlist_no;
       document.getElementById('success-name').textContent = data.name;
       document.getElementById('success-phone').textContent = data.phone_masked;
       document.getElementById('success-time').textContent = '登記時間 ' + formatTime(data.registered_at);
-      history.replaceState({}, '', WEB_APP_URL + '?page=candidate&receipt=' + encodeURIComponent(data.receipt_token));
+      if (data.receipt_token) {
+        persistReceiptInUrl(data.receipt_token);
+      }
       show('screen-success');
     }
 
