@@ -97,57 +97,17 @@ function buildWaitlistIndexFromRows_(rows) {
 }
 
 function rebuildWaitlistIndex_() {
-  var index = buildWaitlistIndexFromRows_(getAllWaitlistRows_());
-  CacheService.getScriptCache().put(
-    getWaitlistIndexCacheKey_(),
-    JSON.stringify(index),
-    CONFIG.CACHE_TTL.WAITLIST_INDEX
-  );
-  return index;
+  return buildWaitlistIndexFromRows_(getAllWaitlistRows_());
 }
 
 function getWaitlistIndex_() {
-  var cache = CacheService.getScriptCache();
-  var cached = cache.get(getWaitlistIndexCacheKey_());
-  if (cached) {
-    return JSON.parse(cached);
-  }
   return rebuildWaitlistIndex_();
 }
 
 function appendWaitlistIndexEntry_(row) {
-  var cache = CacheService.getScriptCache();
-  var cacheKey = getWaitlistIndexCacheKey_();
-  var raw = cache.get(cacheKey);
-  if (!raw) {
-    rebuildWaitlistIndex_();
-    return;
-  }
-
-  var index = JSON.parse(raw);
-  var compact = toIndexRow_(row);
-
-  if (compact.request_id) {
-    index.by_request[compact.request_id] = compact;
-  }
-  if (compact.receipt_token) {
-    index.by_receipt[compact.receipt_token] = compact;
-  }
-
-  var exactKey = compact.normalized_name + '|' + compact.normalized_phone;
-  index.by_exact[exactKey] = compact;
-
-  if (!index.phones[compact.normalized_phone]) {
-    index.phones[compact.normalized_phone] = [];
-  }
-  index.phones[compact.normalized_phone].push(compact);
-
-  if (!index.names[compact.normalized_name]) {
-    index.names[compact.normalized_name] = [];
-  }
-  index.names[compact.normalized_name].push(compact);
-
-  cache.put(cacheKey, JSON.stringify(index), CONFIG.CACHE_TTL.WAITLIST_INDEX);
+  // Waitlist index 不再整包存入 CacheService。
+  // 查詢時直接依目前 Sheet 資料建立 index，
+  // 避免候補人數增加後超過 CacheService 單筆 value 大小限制。
 }
 
 function invalidateWaitlistIndex_() {
