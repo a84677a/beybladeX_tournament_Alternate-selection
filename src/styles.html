@@ -152,16 +152,85 @@
   .field input[type="datetime-local"] {
     color-scheme: dark;
   }
-  .deadline-presets {
+  .display-form {
     display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .display-form .field {
+    margin-bottom: 0;
+  }
+  .deadline-panel {
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #0b1220;
+  }
+  .deadline-panel-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .deadline-panel-title {
+    font-weight: 600;
+  }
+  .deadline-presets {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
-    flex-wrap: wrap;
-    margin-top: 10px;
   }
   .deadline-preset-btn {
-    min-height: 36px;
-    padding: 6px 12px;
+    min-height: 40px;
+    padding: 6px 8px;
     font-size: 14px;
+  }
+  .deadline-preset-btn.active {
+    background: var(--primary);
+    color: #0f172a;
+  }
+  .deadline-toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 10px;
+  }
+  .deadline-toolbar input[type="time"] {
+    flex: 1;
+    min-width: 0;
+    min-height: 44px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 16px;
+  }
+  .deadline-clear-btn {
+    min-height: 44px;
+    padding: 8px 14px;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .deadline-switches {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 8px 16px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .deadline-switches .field-switch {
+    min-height: auto;
+  }
+  .deadline-preview {
+    font-size: 14px;
+    font-weight: 600;
+    text-align: right;
+  }
+  .deadline-preview:not(.muted) {
+    color: var(--primary);
   }
   .field .switch input[type="checkbox"] {
     position: absolute;

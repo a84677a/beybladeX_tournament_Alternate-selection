@@ -64,8 +64,8 @@ function setSettings_(updates) {
 function coerceSettings_(raw) {
   var boolKeys = [
     'registration_enabled', 'qr_visible', 'qr_rotation', 'show_deadline',
-    'auto_close', 'lottery_locked', 'show_qr_countdown', 'show_page_number',
-    'lottery_sort_asc', 'show_random_rank'
+    'auto_close_deadline', 'show_waitlist_count', 'lottery_locked',
+    'show_qr_countdown', 'show_page_number', 'lottery_sort_asc', 'show_random_rank'
   ];
   var numKeys = [
     'qr_rotation_interval', 'token_ttl', 'form_session_ttl', 'pin_max_attempts',
@@ -78,6 +78,16 @@ function coerceSettings_(raw) {
       raw[key] = raw[key] === true || raw[key] === 'TRUE' || raw[key] === 'true' || raw[key] === 1 || raw[key] === '1';
     }
   });
+
+  if (raw.show_deadline === undefined || raw.show_deadline === '') {
+    raw.show_deadline = CONFIG.DEFAULTS.SHOW_DEADLINE;
+  }
+  if (raw.auto_close_deadline === undefined || raw.auto_close_deadline === '') {
+    raw.auto_close_deadline = CONFIG.DEFAULTS.AUTO_CLOSE_DEADLINE;
+  }
+  if (raw.show_waitlist_count === undefined || raw.show_waitlist_count === '') {
+    raw.show_waitlist_count = CONFIG.DEFAULTS.SHOW_WAITLIST_COUNT;
+  }
   numKeys.forEach(function (key) {
     if (raw[key] !== undefined && raw[key] !== '') {
       raw[key] = Number(raw[key]);

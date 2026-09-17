@@ -19,7 +19,7 @@ function formatDeadlineForDisplay_(settings) {
   return Utilities.formatDate(
     date,
     tz,
-    'MM/dd HH:mm'
+    'HH:mm'
   );
 }
 

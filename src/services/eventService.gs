@@ -42,9 +42,9 @@ function getDefaultOperationalSettings_() {
     lottery_id: '',
 
     deadline: '',
-    show_deadline: true,
-    auto_close_deadline: false,
-    show_waitlist_count: false,
+    show_deadline: CONFIG.DEFAULTS.SHOW_DEADLINE,
+    auto_close_deadline: CONFIG.DEFAULTS.AUTO_CLOSE_DEADLINE,
+    show_waitlist_count: CONFIG.DEFAULTS.SHOW_WAITLIST_COUNT,
     show_qr_countdown: true,
 
     display_title: '',

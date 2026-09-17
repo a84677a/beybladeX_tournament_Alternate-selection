@@ -159,44 +159,57 @@
     <div id="panel-display" class="card hidden">
       <h2>顯示設定</h2>
 
-      <div class="grid-2">
-        <div class="field">
-          <label for="set-event-name">活動名稱</label>
-          <input id="set-event-name">
-        </div>
+      <div class="display-form">
+        <div class="grid-2">
+          <div class="field">
+            <label for="set-event-name">活動名稱</label>
+            <input id="set-event-name">
+          </div>
 
-        <div class="field">
-          <label for="set-session-name">場次名稱</label>
-          <input id="set-session-name">
-        </div>
-
-        <div class="field">
-          <label for="set-deadline">候補截止時間</label>
-          <input id="set-deadline" type="datetime-local" step="60">
-          <p class="muted" style="margin-top:4px;font-size:14px;">可點選日曆與時間，或使用下方快捷設定</p>
-          <div class="deadline-presets">
-            <button type="button" class="btn btn-secondary deadline-preset-btn" data-deadline-preset="30m">30 分鐘後</button>
-            <button type="button" class="btn btn-secondary deadline-preset-btn" data-deadline-preset="1h">1 小時後</button>
-            <button type="button" class="btn btn-secondary deadline-preset-btn" data-deadline-preset="2h">2 小時後</button>
-            <button type="button" class="btn btn-secondary deadline-preset-btn" data-deadline-preset="clear">清除</button>
+          <div class="field">
+            <label for="set-session-name">場次名稱</label>
+            <input id="set-session-name">
           </div>
         </div>
 
-        <div class="field field-switch">
-          <label for="set-show-deadline">顯示截止時間</label>
-          <label class="switch">
-            <input id="set-show-deadline" type="checkbox">
-            <span class="switch-slider"></span>
-          </label>
-        </div>
+        <section class="deadline-panel">
+          <div class="deadline-panel-top">
+            <span class="deadline-panel-title">候補截止</span>
+            <span id="deadline-preview" class="deadline-preview muted">未設定</span>
+          </div>
 
-        <div class="field field-switch">
-          <label for="set-auto-close-deadline">到時自動關閉候補</label>
-          <label class="switch">
-            <input id="set-auto-close-deadline" type="checkbox">
-            <span class="switch-slider"></span>
-          </label>
-        </div>
+          <div class="deadline-presets">
+            <button type="button" class="btn btn-secondary deadline-preset-btn" data-deadline-preset="15m">15 分鐘</button>
+            <button type="button" class="btn btn-secondary deadline-preset-btn" data-deadline-preset="30m">30 分鐘</button>
+            <button type="button" class="btn btn-secondary deadline-preset-btn" data-deadline-preset="45m">45 分鐘</button>
+            <button type="button" class="btn btn-secondary deadline-preset-btn" data-deadline-preset="1h">1 小時</button>
+            <button type="button" class="btn btn-secondary deadline-preset-btn" data-deadline-preset="90m">1.5 小時</button>
+            <button type="button" class="btn btn-secondary deadline-preset-btn" data-deadline-preset="2h">2 小時</button>
+          </div>
+
+          <div class="deadline-toolbar">
+            <input id="set-deadline" type="time" step="60" aria-label="指定截止時間">
+            <button type="button" class="btn btn-secondary deadline-clear-btn" data-deadline-preset="clear">清除</button>
+          </div>
+
+          <div class="deadline-switches">
+            <div class="field field-switch">
+              <label for="set-show-deadline">顯示截止時間</label>
+              <label class="switch">
+                <input id="set-show-deadline" type="checkbox" checked>
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+
+            <div class="field field-switch">
+              <label for="set-auto-close-deadline">到時自動關閉</label>
+              <label class="switch">
+                <input id="set-auto-close-deadline" type="checkbox" checked>
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+          </div>
+        </section>
 
         <div class="field field-switch">
           <label for="set-show-waitlist-count">顯示目前候補人數</label>
@@ -213,7 +226,7 @@
 
         <div class="field">
           <label for="set-display-subtitle">補充說明</label>
-          <textarea id="set-display-subtitle" rows="3"></textarea>
+          <textarea id="set-display-subtitle" rows="2"></textarea>
         </div>
       </div>
 
@@ -327,47 +340,126 @@
         .filter(n => !isNaN(n) && n > 0);
     }
 
-    function toDatetimeLocalValue(date) {
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
+    const DEADLINE_PRESETS = {
+      '15m': 15,
+      '30m': 30,
+      '45m': 45,
+      '1h': 60,
+      '90m': 90,
+      '2h': 120
+    };
+
+    function toTimeLocalValue(date) {
       const hour = String(date.getHours()).padStart(2, '0');
       const minute = String(date.getMinutes()).padStart(2, '0');
-      return year + '-' + month + '-' + day + 'T' + hour + ':' + minute;
+      return hour + ':' + minute;
     }
 
-    function deadlineToDatetimeLocal(deadline) {
+    function deadlineToTimeLocal(deadline) {
       if (!deadline) return '';
       const d = new Date(deadline);
       if (isNaN(d.getTime())) return '';
-      return toDatetimeLocalValue(d);
+      return toTimeLocalValue(d);
+    }
+
+    function timeLocalToDate(timeLocal) {
+      const parts = timeLocal.split(':');
+      if (parts.length < 2) return null;
+
+      const hour = parseInt(parts[0], 10);
+      const minute = parseInt(parts[1], 10);
+
+      if (isNaN(hour) || isNaN(minute)) return null;
+
+      const now = new Date();
+      const localDate = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+        hour,
+        minute,
+        0
+      );
+
+      if (isNaN(localDate.getTime())) return null;
+
+      return localDate;
+    }
+
+    function timeLocalToDeadlineIso(timeLocal) {
+      const localDate = timeLocalToDate(timeLocal);
+      if (!localDate) return '';
+      return localDate.toISOString();
+    }
+
+    function findMatchingDeadlinePreset(timeLocal) {
+      if (!timeLocal) return '';
+
+      const target = timeLocalToDate(timeLocal);
+      if (!target) return '';
+
+      const diffMs = target.getTime() - Date.now();
+
+      for (const [preset, minutes] of Object.entries(DEADLINE_PRESETS)) {
+        if (Math.abs(diffMs - minutes * 60 * 1000) < 60000) {
+          return preset;
+        }
+      }
+
+      return '';
+    }
+
+    function syncDeadlinePresetHighlight(activePreset) {
+      document.querySelectorAll('.deadline-preset-btn').forEach(btn => {
+        btn.classList.toggle(
+          'active',
+          btn.dataset.deadlinePreset === activePreset
+        );
+      });
+    }
+
+    function updateDeadlinePreview() {
+      const preview = document.getElementById('deadline-preview');
+      const timeLocal = document.getElementById('set-deadline').value;
+
+      if (!timeLocal) {
+        preview.textContent = '未設定';
+        preview.classList.add('muted');
+        return;
+      }
+
+      const target = timeLocalToDate(timeLocal);
+      let text = timeLocal + ' 截止';
+
+      if (target && target.getTime() <= Date.now()) {
+        text += '（已過，儲存後將立即自動關閉）';
+      }
+
+      preview.textContent = text;
+      preview.classList.remove('muted');
+    }
+
+    function syncDeadlineUi() {
+      const timeLocal = document.getElementById('set-deadline').value;
+      syncDeadlinePresetHighlight(findMatchingDeadlinePreset(timeLocal));
+      updateDeadlinePreview();
     }
 
     function applyDeadlinePreset(preset) {
       const input = document.getElementById('set-deadline');
+
       if (preset === 'clear') {
         input.value = '';
+        syncDeadlineUi();
         return;
       }
 
-      const now = new Date();
-      let target = new Date(now);
+      const minutes = DEADLINE_PRESETS[preset];
+      if (!minutes) return;
 
-      switch (preset) {
-        case '30m':
-          target = new Date(now.getTime() + 30 * 60 * 1000);
-          break;
-        case '1h':
-          target = new Date(now.getTime() + 60 * 60 * 1000);
-          break;
-        case '2h':
-          target = new Date(now.getTime() + 2 * 60 * 60 * 1000);
-          break;
-        default:
-          return;
-      }
-
-      input.value = toDatetimeLocalValue(target);
+      const target = new Date(Date.now() + minutes * 60 * 1000);
+      input.value = toTimeLocalValue(target);
+      syncDeadlineUi();
     }
 
     function showLoginAlert(message) {
@@ -602,7 +694,8 @@
       document.getElementById('set-event-name').value = s.event_name || getDefaultEventName();
       document.getElementById('set-session-name').value = s.session_name || getDefaultSessionName();
 
-      document.getElementById('set-deadline').value = deadlineToDatetimeLocal(s.deadline);
+      document.getElementById('set-deadline').value = deadlineToTimeLocal(s.deadline);
+      syncDeadlineUi();
 
       document.getElementById('set-show-deadline').checked =
         !!s.show_deadline;
@@ -762,7 +855,7 @@
       if (btn.disabled) return;
 
       UI.runWithLoading(btn, '儲存中…', async () => {
-        const deadlineLocal = document.getElementById('set-deadline').value;
+        const deadlineTime = document.getElementById('set-deadline').value;
 
         const showDeadline =
           document.getElementById('set-show-deadline').checked;
@@ -772,15 +865,13 @@
 
         let deadline = '';
 
-        if (deadlineLocal) {
-          const localDate = new Date(deadlineLocal + ':00');
+        if (deadlineTime) {
+          deadline = timeLocalToDeadlineIso(deadlineTime);
 
-          if (isNaN(localDate.getTime())) {
+          if (!deadline) {
             alert('截止時間格式錯誤');
             return;
           }
-
-          deadline = localDate.toISOString();
         }
 
         if (autoCloseDeadline && !deadline) {
@@ -986,6 +1077,8 @@
         applyDeadlinePreset(btn.dataset.deadlinePreset);
       });
     });
+    document.getElementById('set-deadline').addEventListener('input', syncDeadlineUi);
+    document.getElementById('set-deadline').addEventListener('change', syncDeadlineUi);
 
     bootApp();
   </script>
