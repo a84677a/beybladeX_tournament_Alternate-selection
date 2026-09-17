@@ -51,8 +51,8 @@ function getBatchResults_(batch) {
   });
 }
 
-function clearLotteryData_() {
-  [CONFIG.SHEETS.LOTTERY_RESULT, CONFIG.SHEETS.PUBLISH_BATCHES, CONFIG.SHEETS.LOTTERY_AUDIT].forEach(function (name) {
+function clearLotteryResultSheets_() {
+  [CONFIG.SHEETS.LOTTERY_RESULT, CONFIG.SHEETS.PUBLISH_BATCHES].forEach(function (name) {
     var sheet = getSpreadsheet_().getSheetByName(name);
     if (!sheet) return;
     var lastRow = sheet.getLastRow();
@@ -60,4 +60,14 @@ function clearLotteryData_() {
       sheet.deleteRows(2, lastRow - 1);
     }
   });
+}
+
+function clearLotteryData_() {
+  clearLotteryResultSheets_();
+  var auditSheet = getSpreadsheet_().getSheetByName(CONFIG.SHEETS.LOTTERY_AUDIT);
+  if (!auditSheet) return;
+  var lastRow = auditSheet.getLastRow();
+  if (lastRow > 1) {
+    auditSheet.deleteRows(2, lastRow - 1);
+  }
 }

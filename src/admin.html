@@ -125,6 +125,10 @@
         </div>
       </details>
       <button class="btn btn-primary" id="btn-run-lottery">開始抽選</button>
+      <button class="btn btn-danger hidden" id="btn-void-lottery" style="margin-left:8px;">作廢抽選</button>
+      <p class="muted hidden" id="void-lottery-hint" style="margin-top:8px;font-size:14px;">
+        作廢後將清除抽選結果與公布批次，保留 LotteryAudit 稽核紀錄，可重新執行首次抽選。
+      </p>
       <hr style="border-color:var(--border);margin:20px 0;">
       <div class="field">
         <label>追加公布人數</label>
@@ -909,7 +913,7 @@
         '預設 PIN：' + (dashboard.default_staff_pin || '0313') + '（首次初始化時使用；留空則不修改現有 PIN）';
       document.getElementById('first-batch-count').value = s.lottery_first_batch_count || 60;
       document.getElementById('lottery-status').textContent =
-        '抽選狀態：' + (s.lottery_locked ? '已完成（不可重抽）' : '尚未抽選');
+        '抽選狀態：' + (s.lottery_locked ? '已完成（需作廢後才可重抽）' : '尚未抽選');
       document.getElementById('set-lottery-sort-asc').checked = s.lottery_sort_asc !== false;
       document.getElementById('set-show-random-rank').checked = !!s.show_random_rank;
       document.getElementById('set-show-page-number').checked = !!s.show_page_number;
@@ -923,6 +927,8 @@
       document.getElementById('lottery-exclude').disabled = lotteryLocked;
       document.getElementById('lottery-include').disabled = lotteryLocked;
       document.getElementById('btn-add-batch').disabled = !lotteryLocked;
+      document.getElementById('btn-void-lottery').classList.toggle('hidden', !lotteryLocked);
+      document.getElementById('void-lottery-hint').classList.toggle('hidden', !lotteryLocked);
 
       const batchList = document.getElementById('batch-list');
       batchList.innerHTML = '';
@@ -973,12 +979,30 @@
       });
     });
 
+    document.getElementById('btn-void-lottery').addEventListener('click', () => {
+      const btn = document.getElementById('btn-void-lottery');
+      if (btn.disabled || btn.classList.contains('hidden')) return;
+      if (!confirm('確定要作廢本次抽選？\n\n此操作將清除抽選結果與所有公布批次，但會保留稽核紀錄。')) return;
+      const reason = prompt('請填寫作廢原因（必填）：');
+      if (reason === null) return;
+      if (!reason.trim()) {
+        alert('請填寫作廢原因');
+        return;
+      }
+      if (!confirm('再次確認：確定作廢抽選？\n原因：' + reason.trim())) return;
+      UI.runWithLoading(btn, '作廢中…', async () => {
+        const res = await post('admin.voidLottery', { reason: reason.trim() });
+        alert(res.ok ? (res.data?.message || '抽選已作廢') : (res.error?.message || '作廢失敗'));
+        await loadDashboard();
+      });
+    });
+
     document.getElementById('btn-run-lottery').addEventListener('click', () => {
       const btn = document.getElementById('btn-run-lottery');
       if (btn.disabled) return;
       const exclude = parseWaitlistNos(document.getElementById('lottery-exclude').value);
       const include = parseWaitlistNos(document.getElementById('lottery-include').value);
-      let confirmMsg = '確定執行首次抽選？此操作不可直接重抽。';
+      let confirmMsg = '確定執行首次抽選？完成後需先作廢才可重抽。';
       if (exclude.length) confirmMsg += '\n\n排除序號：' + exclude.join(', ');
       if (include.length) confirmMsg += '\n必中首輪：' + include.join(', ');
       if (!confirm(confirmMsg)) return;

@@ -188,7 +188,7 @@ clasp push --force
 | 2 | 櫃檯核驗、PIN、橘色狀態 | ✅ 骨架完成 |
 | 3 | Display QR Rotation、Responsive | ✅ 骨架完成 |
 | 4 | 抽選、Publish Batch、結果 Display | ✅ 骨架完成 |
-| 5 | 匯出/清空、Audit、進階抽選 | 🔶 基礎版完成 |
+| 5 | 匯出/清空、Audit、進階抽選、作廢重抽 | ✅ 完成 |
 | 6 | 壓力測試、實機驗收 | ⬜ 待進行 |
 
 ## API Actions
@@ -203,7 +203,9 @@ clasp push --force
 | `admin.login` | Admin PIN 登入 |
 | `admin.logout` | Admin 登出 |
 | `admin.checkSession` | 驗證 Admin Session |
-| `admin.*` | 管理後台操作（需 Session token） |
+| `admin.runInitialLottery` | 首次抽選（含進階 exclude/include 規則） |
+| `admin.voidLottery` | 作廢抽選（保留 LotteryAudit，可重抽） |
+| `admin.*` | 其他管理後台操作（需 Session token） |
 
 ## 核心原則
 
