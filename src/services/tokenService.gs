@@ -135,6 +135,16 @@ function createFormSession_(token) {
   });
 }
 
+function getFormSessionCacheTtl_(settings, session) {
+  if (session && session.stage === 'pin_pending') {
+    return Math.min(
+      Number(settings.pin_session_ttl) || CONFIG.DEFAULTS.PIN_SESSION_TTL,
+      21600
+    );
+  }
+  return Number(settings.form_session_ttl) || CONFIG.DEFAULTS.FORM_SESSION_TTL;
+}
+
 function extendFormSession_(sessionId) {
   if (!sessionId) {
     return error_(
@@ -157,20 +167,42 @@ function extendFormSession_(sessionId) {
     return error_('SESSION_EXPIRED', '填寫時間已過期，請重新掃描 QR Code。');
   }
 
-  var ttl = Number(settings.form_session_ttl) || CONFIG.DEFAULTS.FORM_SESSION_TTL;
+  var ttl = getFormSessionCacheTtl_(settings, check.session);
   var expiresAt = Math.floor(Date.now() / 1000) + ttl;
   check.session.expires_at = expiresAt;
 
-  var cache = CacheService.getScriptCache();
-  cache.put(
-    CONFIG.CACHE_PREFIX + 'session_' + sessionId,
-    JSON.stringify(check.session),
-    ttl
-  );
+  writeFormSession_(sessionId, check.session, ttl);
 
   return success_({
     form_session_id: sessionId,
-    expires_at: expiresAt
+    expires_at: expiresAt,
+    stage: check.session.stage || ''
+  });
+}
+
+function checkFormSession_(sessionId) {
+  if (!sessionId) {
+    return error_('SESSION_EXPIRED', '填寫時間已過期，請重新掃描 QR Code。');
+  }
+
+  var settings = applyAutoCloseDeadline_(getAllSettings_());
+
+  if (!settings.registration_enabled) {
+    return error_(
+      'REGISTRATION_CLOSED',
+      '本場候補登記已結束；無法繼續完成登記。'
+    );
+  }
+
+  var check = validateFormSession_(sessionId);
+  if (!check.valid) {
+    return error_('SESSION_EXPIRED', '填寫時間已過期，請重新掃描 QR Code。');
+  }
+
+  return success_({
+    form_session_id: sessionId,
+    expires_at: check.session.expires_at || 0,
+    stage: check.session.stage || ''
   });
 }
 
@@ -233,10 +265,7 @@ function lockForPinVerification_(formSessionId, name, phone) {
     return error_('INVALID_PHONE', '請輸入有效的手機號碼（09xxxxxxxx）');
   }
 
-  var pinTtl = Math.min(
-    Number(settings.pin_session_ttl) || CONFIG.DEFAULTS.PIN_SESSION_TTL,
-    21600
-  );
+  var pinTtl = getFormSessionCacheTtl_(settings, { stage: 'pin_pending' });
   var normalizedName = normalizeName_(name);
   var normalizedPhone = normalizePhone_(phone);
   var session = check.session;

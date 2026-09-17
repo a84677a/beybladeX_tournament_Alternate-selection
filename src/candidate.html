@@ -12,6 +12,7 @@
       <p id="display-title" class="muted"></p>
       <p id="display-subtitle" class="muted"></p>
       <p id="deadline-info" class="muted"></p>
+      <p id="session-countdown" class="muted hidden"></p>
       <p id="session-loading" class="muted">正在驗證 QR Code…</p>
       <div class="field">
         <label for="name">真實姓名</label>
@@ -33,6 +34,7 @@
         <button class="btn btn-secondary" id="btn-back" style="flex:1">返回修改</button>
         <button class="btn btn-primary" id="btn-submit" style="flex:1">確認無誤</button>
       </div>
+      <p id="review-countdown" class="muted hidden"></p>
       <p id="review-error" class="muted" style="color:#f87171;margin-top:12px;"></p>
     </div>
 
@@ -103,6 +105,11 @@
     let pending = null;
     let sessionReady = false;
     let pinLockoutTimer = null;
+    let sessionKeepaliveTimer = null;
+    let countdownTimer = null;
+    let sessionExpiresAt = 0;
+    let currentScreen = 'screen-form';
+    const PIN_KEEPALIVE_MS = 45000;
     let requestId = (typeof crypto !== 'undefined' && crypto.randomUUID)
       ? crypto.randomUUID()
       : ('req_' + Date.now() + '_' + Math.random().toString(36).slice(2));
@@ -147,15 +154,157 @@
     }
 
     function show(id) {
+      currentScreen = id;
       ['screen-form', 'screen-review', 'screen-pin', 'screen-success', 'screen-error'].forEach(s => {
         document.getElementById(s).classList.toggle('hidden', s !== id);
       });
+      syncSessionKeepalive();
+      syncCountdownDisplay();
     }
 
     function showError(title, message) {
+      stopSessionKeepalive();
+      stopCountdown();
       document.getElementById('error-title').textContent = title;
       document.getElementById('error-message').textContent = message;
       show('screen-error');
+    }
+
+    function stopSessionKeepalive() {
+      if (sessionKeepaliveTimer) {
+        clearInterval(sessionKeepaliveTimer);
+        sessionKeepaliveTimer = null;
+      }
+    }
+
+    function stopCountdown() {
+      if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+      }
+    }
+
+    function updateSessionExpiry(expiresAt) {
+      sessionExpiresAt = Number(expiresAt) || 0;
+      syncCountdownDisplay();
+    }
+
+    function formatRemainingSeconds(totalSeconds) {
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      return minutes + ':' + String(seconds).padStart(2, '0');
+    }
+
+    function getCountdownElements() {
+      return [
+        document.getElementById('session-countdown'),
+        document.getElementById('review-countdown')
+      ];
+    }
+
+    function syncCountdownDisplay() {
+      const showCountdown =
+        currentScreen === 'screen-form' || currentScreen === 'screen-review';
+
+      getCountdownElements().forEach(el => {
+        if (!el) return;
+        el.classList.toggle('hidden', !showCountdown || !sessionExpiresAt);
+      });
+
+      if (!showCountdown || !sessionExpiresAt) {
+        stopCountdown();
+        return;
+      }
+
+      updateCountdownText();
+      if (!countdownTimer) {
+        countdownTimer = setInterval(updateCountdownText, 1000);
+      }
+    }
+
+    function updateCountdownText() {
+      const remaining = sessionExpiresAt - Math.floor(Date.now() / 1000);
+      const text = remaining <= 0
+        ? '填寫時間已到期，請重新掃描 QR Code'
+        : '剩餘填寫時間：' + formatRemainingSeconds(remaining);
+
+      getCountdownElements().forEach(el => {
+        if (el && !el.classList.contains('hidden')) {
+          el.textContent = text;
+        }
+      });
+
+      if (remaining <= 0 && currentScreen !== 'screen-pin') {
+        handleSessionLost('SESSION_EXPIRED');
+      }
+    }
+
+    async function refreshFormSession(options) {
+      options = options || {};
+      if (!formSessionId) {
+        throw new Error('QR 驗證尚未完成，請稍候或重新掃描');
+      }
+
+      const action = options.checkOnly ? 'checkFormSession' : 'extendFormSession';
+      const res = await post(action, { form_session_id: formSessionId });
+
+      if (!res.ok) {
+        if (!options.silent) {
+          throw new Error(res.error?.message || '填寫時間已過期，請重新掃描 QR Code');
+        }
+        handleSessionLost(res.error?.code, res.error?.message);
+        return null;
+      }
+
+      if (res.data.expires_at) {
+        updateSessionExpiry(res.data.expires_at);
+      }
+      return res.data;
+    }
+
+    function handleSessionLost(code, message) {
+      stopSessionKeepalive();
+      stopCountdown();
+      clearPinLockoutTimer();
+      setFormEnabled(false);
+      setPinSubmitEnabled(false);
+
+      const closed = code === 'REGISTRATION_CLOSED' || code === 'NO_ACTIVE_EVENT';
+      const msg = closed
+        ? (message || '本場候補登記已結束。')
+        : (currentScreen === 'screen-pin'
+          ? '等待過久，請重新掃描現場 QR Code。'
+          : (message || '填寫時間已過期，請重新掃描 QR Code。'));
+
+      if (currentScreen === 'screen-pin') {
+        document.getElementById('pin-error').textContent = msg;
+        return;
+      }
+      if (currentScreen === 'screen-review') {
+        document.getElementById('review-error').textContent = msg;
+        document.getElementById('btn-submit').disabled = true;
+        return;
+      }
+      if (currentScreen === 'screen-form') {
+        document.getElementById('form-error').textContent = msg;
+        return;
+      }
+
+      showError(closed ? '候補登記已結束' : '登記已逾時', msg);
+    }
+
+    function syncSessionKeepalive() {
+      stopSessionKeepalive();
+
+      // 填表／確認階段不自動 extend，維持 form_session_ttl 防 QR 外流。
+      // 僅櫃檯 PIN 等待階段续命（已完成確認、需現場 PIN 才能完成登記）。
+      if (currentScreen === 'screen-pin') {
+        sessionKeepaliveTimer = setInterval(function () {
+          refreshFormSession({ silent: true }).catch(function () {
+            // 網路暫時失敗時保留畫面，下一輪再試
+          });
+        }, PIN_KEEPALIVE_MS);
+      }
     }
 
     function persistReceiptInUrl(receiptToken) {
@@ -240,6 +389,9 @@
       formSessionId = res.data.form_session_id;
       mode = res.data.mode || 'general';
       sessionReady = true;
+      if (res.data.expires_at) {
+        updateSessionExpiry(res.data.expires_at);
+      }
       applyDisplayInfo(res.data);
       if (res.data.show_deadline && res.data.deadline) {
         document.getElementById('deadline-info').textContent = '候補登記截止時間：' + res.data.deadline;
@@ -247,14 +399,7 @@
     }
 
     async function ensureFormSession() {
-      if (!formSessionId) {
-        throw new Error('QR 驗證尚未完成，請稍候或重新掃描');
-      }
-      const res = await post('extendFormSession', { form_session_id: formSessionId });
-      if (!res.ok) {
-        throw new Error(res.error?.message || '填寫時間已過期，請重新掃描 QR Code');
-      }
-      formSessionId = res.data.form_session_id;
+      await refreshFormSession();
     }
 
     document.getElementById('btn-confirm').addEventListener('click', async () => {
@@ -274,7 +419,11 @@
       }
     });
 
-    document.getElementById('btn-back').addEventListener('click', () => show('screen-form'));
+    document.getElementById('btn-back').addEventListener('click', () => {
+      document.getElementById('btn-submit').disabled = false;
+      document.getElementById('review-error').textContent = '';
+      show('screen-form');
+    });
 
     document.getElementById('btn-submit').addEventListener('click', () => {
       const btn = document.getElementById('btn-submit');
@@ -302,6 +451,7 @@
       if (!res.ok) {
         throw new Error(res.error?.message || '無法鎖定資料，請重新確認');
       }
+      await refreshFormSession();
       document.getElementById('pin-name').textContent = pending.name;
       document.getElementById('pin-phone').textContent = pending.phone.slice(0, 4) + '***' + pending.phone.slice(-3);
       document.getElementById('pin-error').textContent = '';
@@ -371,6 +521,8 @@
       const res = await UI.postWithRetry(post, action, payload);
 
       if (res.ok) {
+        stopSessionKeepalive();
+        stopCountdown();
         showSuccess(res.data);
         return;
       }
@@ -383,8 +535,12 @@
       const code = res.error?.code;
       const msg = res.error?.message || '登記失敗';
       if (mode === 'counter') {
-        if (code === 'PIN_SESSION_EXHAUSTED' || code === 'SESSION_EXPIRED') {
+        if (code === 'PIN_SESSION_EXHAUSTED') {
           showError('PIN 嘗試次數已用盡', msg || '請重新掃描現場 QR Code 後再登記。');
+          return;
+        }
+        if (code === 'SESSION_EXPIRED') {
+          showError('登記已逾時', msg || '等待過久，請重新掃描現場 QR Code。');
           return;
         }
         if (code === 'PIN_LOCKED') {
@@ -409,6 +565,7 @@
         document.getElementById('session-loading').classList.add('hidden');
         if (sessionReady) {
           setFormEnabled(true);
+          syncCountdownDisplay();
         }
       }
     }
