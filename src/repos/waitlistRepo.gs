@@ -17,6 +17,18 @@ function getAllWaitlistRows_() {
   });
 }
 
+function isWaitlistIndexed_(row) {
+  return row.status === 'active' || row.status === 'excluded';
+}
+
+function isWaitlistLotteryEligible_(row) {
+  return row.status === 'active';
+}
+
+function isWaitlistPublicCounted_(row) {
+  return row.status === 'active' || row.status === 'excluded';
+}
+
 function rowToObject_(headers, row) {
   var obj = {};
   headers.forEach(function (header, idx) {
@@ -57,7 +69,7 @@ function buildWaitlistIndexFromRows_(rows) {
   };
 
   rows.forEach(function (row) {
-    if (row.status !== 'active') return;
+    if (!isWaitlistIndexed_(row)) return;
     var compact = toIndexRow_(row);
 
     if (compact.request_id) {
@@ -245,7 +257,7 @@ function countActiveWaitlist_() {
   var statuses = sheet.getRange(2, statusCol, lastRow - 1, 1).getValues();
   var count = 0;
   for (var i = 0; i < statuses.length; i++) {
-    if (statuses[i][0] === 'active') count++;
+    if (isWaitlistPublicCounted_({ status: statuses[i][0] })) count++;
   }
   cache.put(cacheKey, String(count), CONFIG.CACHE_TTL.WAITLIST_COUNT);
   return count;
@@ -253,6 +265,40 @@ function countActiveWaitlist_() {
 
 function invalidateWaitlistCountCache_() {
   CacheService.getScriptCache().remove(CONFIG.CACHE_PREFIX + 'waitlist_count');
+}
+
+function findWaitlistSheetRow_(waitlistNo) {
+  var sheet = getWaitlistSheet_();
+  var values = sheet.getDataRange().getValues();
+  if (values.length <= 1) return null;
+
+  var headers = values[0];
+  var waitlistNoCol = headers.indexOf('waitlist_no');
+  var statusCol = headers.indexOf('status');
+  if (waitlistNoCol === -1 || statusCol === -1) return null;
+
+  for (var i = 1; i < values.length; i++) {
+    if (Number(values[i][waitlistNoCol]) === Number(waitlistNo)) {
+      return {
+        rowIndex: i + 1,
+        statusCol: statusCol + 1,
+        row: rowToObject_(headers, values[i])
+      };
+    }
+  }
+  return null;
+}
+
+function setWaitlistRowStatus_(waitlistNo, status) {
+  var found = findWaitlistSheetRow_(waitlistNo);
+  if (!found) return null;
+
+  getWaitlistSheet_()
+    .getRange(found.rowIndex, found.statusCol)
+    .setValue(status);
+  invalidateWaitlistIndex_();
+  invalidateWaitlistCountCache_();
+  return found.row;
 }
 
 function formatRegisteredAt_(value) {

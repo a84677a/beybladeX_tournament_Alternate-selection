@@ -74,6 +74,10 @@ function dispatchAction_(action, body) {
       return adminCheckSession_(body.token);
     case 'admin.getDashboard':
       return getAdminDashboard_();
+    case 'admin.removeWaitlistEntry':
+      return removeWaitlistEntry_(body.waitlist_no);
+    case 'admin.restoreWaitlistEntry':
+      return restoreWaitlistEntry_(body.waitlist_no);
     case 'admin.setQuickState':
       return setQuickState_(body.state);
     case 'admin.setRegistrationState':

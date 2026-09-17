@@ -109,9 +109,7 @@ function runInitialLottery_(firstBatchCount, advancedRules) {
     return error_('LOTTERY_LOCKED', '抽選已完成，無法重新抽選');
   }
 
-  var waitlist = getAllWaitlistRows_().filter(function (row) {
-    return row.status === 'active';
-  });
+  var waitlist = getAllWaitlistRows_().filter(isWaitlistLotteryEligible_);
   if (waitlist.length === 0) {
     return error_('NO_CANDIDATES', '沒有可抽選的候補人員');
   }

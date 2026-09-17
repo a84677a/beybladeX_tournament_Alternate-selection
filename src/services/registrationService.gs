@@ -262,3 +262,83 @@ function recordStaffPinFailure_(input) {
     { remaining_attempts: remaining }
   );
 }
+
+function removeWaitlistEntry_(waitlistNo) {
+  requireAdmin_();
+  waitlistNo = Number(waitlistNo);
+  if (!waitlistNo || waitlistNo < 1) {
+    return error_('INVALID_WAITLIST_NO', '序號無效');
+  }
+
+  var settings = getAllSettings_();
+  var found = findWaitlistSheetRow_(waitlistNo);
+  if (!found) {
+    return error_('NOT_FOUND', '找不到候補序號 ' + formatWaitlistNo_(waitlistNo));
+  }
+  if (found.row.status === 'excluded') {
+    return error_('ALREADY_EXCLUDED', '此候補已剔除');
+  }
+  if (found.row.status !== 'active') {
+    return error_('INVALID_STATUS', '此候補狀態無法剔除');
+  }
+
+  if (settings.lottery_locked) {
+    var inLottery = getLotteryResults_().some(function (row) {
+      return Number(row.waitlist_no) === waitlistNo;
+    });
+    if (inLottery) {
+      return error_('LOTTERY_LOCKED', '抽選已完成，無法剔除已納入抽選的候補');
+    }
+  }
+
+  var published = buildAdminPublishedLottery_(settings);
+  var isPublished = (published.entries || []).some(function (entry) {
+    return Number(entry.waitlist_no_raw) === waitlistNo;
+  });
+  if (isPublished) {
+    return error_('ALREADY_PUBLISHED', '此候補已公布，無法剔除');
+  }
+
+  setWaitlistRowStatus_(waitlistNo, 'excluded');
+  appendAuditLog_('EXCLUDE_WAITLIST', {
+    waitlist_no: waitlistNo,
+    name: found.row.name
+  });
+
+  return success_({
+    waitlist_no: formatWaitlistNo_(waitlistNo),
+    message: '已剔除候補 ' + formatWaitlistNo_(waitlistNo) + '（登記者不會收到通知）'
+  });
+}
+
+function restoreWaitlistEntry_(waitlistNo) {
+  requireAdmin_();
+  waitlistNo = Number(waitlistNo);
+  if (!waitlistNo || waitlistNo < 1) {
+    return error_('INVALID_WAITLIST_NO', '序號無效');
+  }
+
+  var settings = getAllSettings_();
+  if (settings.lottery_locked) {
+    return error_('LOTTERY_LOCKED', '抽選已完成，無法恢復候補');
+  }
+
+  var found = findWaitlistSheetRow_(waitlistNo);
+  if (!found) {
+    return error_('NOT_FOUND', '找不到候補序號 ' + formatWaitlistNo_(waitlistNo));
+  }
+  if (found.row.status !== 'excluded') {
+    return error_('NOT_EXCLUDED', '此候補不在剔除狀態');
+  }
+
+  setWaitlistRowStatus_(waitlistNo, 'active');
+  appendAuditLog_('RESTORE_WAITLIST', {
+    waitlist_no: waitlistNo,
+    name: found.row.name
+  });
+
+  return success_({
+    waitlist_no: formatWaitlistNo_(waitlistNo),
+    message: '已恢復候補 ' + formatWaitlistNo_(waitlistNo)
+  });
+}

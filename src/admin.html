@@ -145,7 +145,7 @@
         <h3 id="all-waitlist-heading" class="admin-section-title hidden">全部候補登記</h3>
         <div class="table-wrap">
           <table class="table">
-            <thead><tr><th>序號</th><th>姓名</th><th>電話</th><th>時間</th><th>提示</th></tr></thead>
+            <thead><tr><th>序號</th><th>姓名</th><th>電話</th><th>時間</th><th>提示</th><th>操作</th></tr></thead>
             <tbody id="waitlist-body"></tbody>
           </table>
         </div>
@@ -876,6 +876,33 @@
       });
     }
 
+    async function removeWaitlistEntry(waitlistNo, name) {
+      const label = waitlistNo + (name ? '（' + name + '）' : '');
+      if (!confirm(
+        '確定要剔除候補 ' + label + '？\n\n' +
+        '· 仍會保留在列表上\n' +
+        '· 抽選時不會被抽到\n' +
+        '· 登記者不會收到任何通知'
+      )) return;
+      const res = await post('admin.removeWaitlistEntry', { waitlist_no: waitlistNo });
+      if (!res.ok) {
+        alert(res.error?.message || '剔除失敗');
+        return;
+      }
+      await loadDashboard();
+    }
+
+    async function restoreWaitlistEntry(waitlistNo, name) {
+      const label = waitlistNo + (name ? '（' + name + '）' : '');
+      if (!confirm('確定要恢復候補 ' + label + '？\n\n恢復後將重新納入抽選。')) return;
+      const res = await post('admin.restoreWaitlistEntry', { waitlist_no: waitlistNo });
+      if (!res.ok) {
+        alert(res.error?.message || '恢復失敗');
+        return;
+      }
+      await loadDashboard();
+    }
+
     function renderWaitlistTable(waitlist, publishedLookup) {
       const tbody = document.getElementById('waitlist-body');
       tbody.innerHTML = '';
@@ -884,7 +911,7 @@
       if (rows.length === 0) {
         const tr = document.createElement('tr');
         const td = document.createElement('td');
-        td.colSpan = 5;
+        td.colSpan = 6;
         td.className = 'table-empty muted';
         td.textContent = '尚無候補登記';
         tr.appendChild(td);
@@ -894,6 +921,7 @@
 
       rows.forEach(row => {
         const tr = document.createElement('tr');
+        if (row.is_excluded) tr.className = 'waitlist-row-excluded';
         const published = publishedLookup && publishedLookup[String(row.waitlist_no_raw)];
 
         const tdNo = document.createElement('td');
@@ -909,6 +937,14 @@
         tdTime.textContent = row.registered_at || '';
 
         const tdFlags = document.createElement('td');
+
+        if (row.is_excluded) {
+          const badge = document.createElement('span');
+          badge.className = 'badge badge-excluded';
+          badge.textContent = '已剔除';
+          tdFlags.appendChild(badge);
+          tdFlags.appendChild(document.createTextNode(' '));
+        }
 
         if (published) {
           const badge = document.createElement('span');
@@ -943,11 +979,36 @@
             tdFlags.appendChild(document.createTextNode(' '));
           });
 
+        const tdAction = document.createElement('td');
+        if (row.can_remove) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn btn-danger btn-table';
+          btn.textContent = '剔除';
+          btn.addEventListener('click', function () {
+            removeWaitlistEntry(row.waitlist_no_raw, row.name);
+          });
+          tdAction.appendChild(btn);
+        } else if (row.can_restore) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn btn-secondary btn-table';
+          btn.textContent = '恢復';
+          btn.addEventListener('click', function () {
+            restoreWaitlistEntry(row.waitlist_no_raw, row.name);
+          });
+          tdAction.appendChild(btn);
+        } else {
+          tdAction.className = 'muted';
+          tdAction.textContent = '-';
+        }
+
         tr.appendChild(tdNo);
         tr.appendChild(tdName);
         tr.appendChild(tdPhone);
         tr.appendChild(tdTime);
         tr.appendChild(tdFlags);
+        tr.appendChild(tdAction);
 
         tbody.appendChild(tr);
       });

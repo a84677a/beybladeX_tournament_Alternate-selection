@@ -308,14 +308,52 @@ function buildAdminPublishedLottery_(settings) {
   };
 }
 
+function countLotteryEligibleWaitlist_() {
+  return getAllWaitlistRows_().filter(isWaitlistLotteryEligible_).length;
+}
+
+function toAdminWaitlistRow_(row, context) {
+  var publicRow = toPublicWaitlistRow_(row);
+  var waitlistNo = Number(row.waitlist_no);
+  publicRow.is_excluded = row.status === 'excluded';
+  publicRow.can_remove = row.status === 'active' &&
+    !context.publishedNos[waitlistNo] &&
+    (!context.lotteryLocked || !context.lotteryNos[waitlistNo]);
+  publicRow.can_restore = row.status === 'excluded' && !context.lotteryLocked;
+  return publicRow;
+}
+
+function buildAdminWaitlistContext_(settings, publishedLottery) {
+  var publishedNos = {};
+  (publishedLottery.entries || []).forEach(function (entry) {
+    publishedNos[Number(entry.waitlist_no_raw)] = true;
+  });
+
+  var lotteryNos = {};
+  if (settings.lottery_locked) {
+    getLotteryResults_().forEach(function (row) {
+      lotteryNos[Number(row.waitlist_no)] = true;
+    });
+  }
+
+  return {
+    publishedNos: publishedNos,
+    lotteryNos: lotteryNos,
+    lotteryLocked: !!settings.lottery_locked
+  };
+}
+
 function getAdminDashboard_() {
   requireAdmin_();
 
   var settings =
     applyAutoCloseDeadline_(getAllSettings_());
-  var waitlist = getAllWaitlistRows_().map(toPublicWaitlistRow_);
   var batches = getPublishBatches_();
   var publishedLottery = buildAdminPublishedLottery_(settings);
+  var waitlistContext = buildAdminWaitlistContext_(settings, publishedLottery);
+  var waitlist = getAllWaitlistRows_().map(function (row) {
+    return toAdminWaitlistRow_(row, waitlistContext);
+  });
 
   return success_({
     settings: settings,
@@ -325,7 +363,8 @@ function getAdminDashboard_() {
     has_active_event: settings.event_status === 'ACTIVE',
     event_label: buildEventLabel_(settings),
     waitlist: waitlist,
-    waitlist_count: waitlist.length,
+    waitlist_count: countLotteryEligibleWaitlist_(),
+    waitlist_public_count: countActiveWaitlist_(),
     publish_batches: batches,
     published_lottery: publishedLottery,
     urls: {
