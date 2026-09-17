@@ -30,13 +30,15 @@ function getWaitlistIndexCacheKey_() {
 }
 
 function toIndexRow_(row) {
+  var normalizedName = normalizeName_(row.normalized_name || row.name);
+  var normalizedPhone = normalizePhone_(row.normalized_phone || row.phone);
   return {
     event_id: row.event_id,
     waitlist_no: row.waitlist_no,
     name: row.name,
-    phone: row.phone,
-    normalized_name: row.normalized_name,
-    normalized_phone: row.normalized_phone,
+    phone: normalizedPhone || row.phone,
+    normalized_name: normalizedName,
+    normalized_phone: normalizedPhone,
     registered_at: row.registered_at,
     request_id: row.request_id,
     receipt_token: row.receipt_token,
@@ -197,13 +199,31 @@ function findDuplicateFlags_(normalizedName, normalizedPhone) {
 function insertWaitlistRow_(row) {
   var sheet = getWaitlistSheet_();
   var headers = WAITLIST_HEADERS;
+  var normalizedPhone = normalizePhone_(row.normalized_phone || row.phone);
+  var storedRow = {
+    event_id: row.event_id,
+    waitlist_no: row.waitlist_no,
+    name: row.name,
+    phone: normalizedPhone,
+    normalized_name: normalizeName_(row.normalized_name || row.name),
+    normalized_phone: normalizedPhone,
+    registered_at: row.registered_at,
+    request_id: row.request_id,
+    receipt_token: row.receipt_token,
+    duplicate_flags: row.duplicate_flags,
+    status: row.status
+  };
   var values = headers.map(function (header) {
-    return row[header] !== undefined ? row[header] : '';
+    var val = storedRow[header] !== undefined ? storedRow[header] : '';
+    if (header === 'phone' || header === 'normalized_phone') {
+      return formatPhoneForSheet_(val);
+    }
+    return val;
   });
   sheet.appendRow(values);
   invalidateWaitlistCountCache_();
-  appendWaitlistIndexEntry_(row);
-  return row;
+  appendWaitlistIndexEntry_(storedRow);
+  return storedRow;
 }
 
 function countActiveWaitlist_() {

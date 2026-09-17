@@ -11,7 +11,17 @@ function normalizePhone_(phone) {
   } else if (digits.indexOf('886') === 0 && digits.length >= 11) {
     digits = '0' + digits.substring(3);
   }
+  // Sheets 以數字儲存時會吃掉前導 0（932348446 → 需還原為 0932348446）
+  if (/^9\d{8}$/.test(digits)) {
+    digits = '0' + digits;
+  }
   return digits;
+}
+
+function formatPhoneForSheet_(phone) {
+  var normalized = normalizePhone_(phone);
+  if (!normalized) return '';
+  return "'" + normalized;
 }
 
 function maskPhone_(phone) {

@@ -5,13 +5,24 @@
 function ensureWaitlistSystemInitialized_(ss) {
   ss = ss || getSpreadsheetRaw_();
 
+  var existingWaitlist = ss.getSheetByName(CONFIG.SHEETS.WAITLIST);
+  if (existingWaitlist) {
+    formatWaitlistPhoneColumnsAsText_(existingWaitlist);
+    var propsForMigration = PropertiesService.getScriptProperties();
+    if (propsForMigration.getProperty('WAITLIST_PHONE_NORM_V2') !== '1') {
+      invalidateWaitlistIndex_();
+      propsForMigration.setProperty('WAITLIST_PHONE_NORM_V2', '1');
+    }
+  }
+
   var props = PropertiesService.getScriptProperties();
   if (props.getProperty('WAITLIST_SYSTEM_INITIALIZED') === '1') {
     return;
   }
 
   ensureSheet_(ss, CONFIG.SHEETS.SETTINGS, ['key', 'value']);
-  ensureSheet_(ss, CONFIG.SHEETS.WAITLIST, WAITLIST_HEADERS);
+  var waitlistSheet = ensureSheet_(ss, CONFIG.SHEETS.WAITLIST, WAITLIST_HEADERS);
+  formatWaitlistPhoneColumnsAsText_(waitlistSheet);
   ensureSheet_(ss, CONFIG.SHEETS.LOTTERY_RESULT, LOTTERY_RESULT_HEADERS);
   ensureSheet_(ss, CONFIG.SHEETS.PUBLISH_BATCHES, PUBLISH_BATCH_HEADERS);
   ensureSheet_(ss, CONFIG.SHEETS.LOTTERY_AUDIT, LOTTERY_AUDIT_HEADERS);
@@ -101,6 +112,19 @@ function ensureSheet_(spreadsheet, name, headers) {
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
   }
+  return sheet;
+}
+
+function formatWaitlistPhoneColumnsAsText_(sheet) {
+  if (!sheet) return;
+  var phoneCol = WAITLIST_HEADERS.indexOf('phone') + 1;
+  var normalizedPhoneCol = WAITLIST_HEADERS.indexOf('normalized_phone') + 1;
+  var lastRow = Math.max(sheet.getLastRow(), 1);
+  [phoneCol, normalizedPhoneCol].forEach(function (col) {
+    if (col > 0) {
+      sheet.getRange(1, col, lastRow, 1).setNumberFormat('@');
+    }
+  });
 }
 
 function setSpreadsheetId(spreadsheetId) {
