@@ -393,6 +393,24 @@
       return renderClosed(state);
     }
 
+    function getNextRefreshDelay() {
+      if (lastState && getViewMode(lastState) === 'open') {
+        const qr = lastState.qr || {};
+
+        if (qr.rotation_enabled && qr.expires_at) {
+          const untilExpiry =
+            qr.expires_at * 1000 - Date.now();
+
+          return Math.max(
+            200,
+            Math.min(10000, untilExpiry + 200)
+          );
+        }
+      }
+
+      return pollIntervalMs;
+    }
+
     function scheduleRefresh() {
       clearTimeout(pollTimer);
       pollTimer = setTimeout(async () => {
@@ -407,7 +425,7 @@
           pollIntervalMs = Math.min(Math.round(pollIntervalMs * 1.5), 30000);
         }
         scheduleRefresh();
-      }, pollIntervalMs);
+      }, getNextRefreshDelay());
     }
 
     if (INITIAL_STATE) {

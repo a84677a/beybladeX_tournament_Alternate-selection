@@ -34,25 +34,13 @@ function buildQrToken_(settings) {
 function validateQrToken_(token) {
   var settings = getAllSettings_();
 
-  if (!token) {
-    return {
-      valid: false,
-      reason: 'missing'
-    };
-  }
-
-  // Rotation OFF：
-  // 使用固定 window = 0，但仍然必須驗證 token。
   if (!settings.qr_rotation) {
-    var expectedFixedToken = hmacToken_(
-      settings.event_id,
-      0
-    );
+    var fixedExpected = hmacToken_(settings.event_id, 0);
 
-    if (token === expectedFixedToken) {
+    if (fixedExpected === token) {
       return {
         valid: true,
-        reason: 'rotation_off'
+        time_window: 0
       };
     }
 
@@ -65,18 +53,56 @@ function validateQrToken_(token) {
   var interval =
     Number(settings.qr_rotation_interval) ||
     CONFIG.DEFAULTS.QR_ROTATION_INTERVAL;
-  var ttl = Number(settings.token_ttl) || CONFIG.DEFAULTS.TOKEN_TTL;
-  var currentWindow = getCurrentTimeWindow_(interval);
-  var windowsToCheck = Math.max(1, Math.ceil(ttl / interval));
 
-  for (var i = 0; i < windowsToCheck; i++) {
-    var window = currentWindow - i;
-    var expected = hmacToken_(settings.event_id, window);
-    if (expected === token) {
-      return { valid: true, time_window: window };
-    }
+  var graceSeconds =
+    Number(settings.token_ttl);
+
+  if (isNaN(graceSeconds) || graceSeconds < 0) {
+    graceSeconds = 0;
   }
-  return { valid: false, reason: 'expired' };
+
+  var nowSeconds =
+    Math.floor(Date.now() / 1000);
+
+  var currentWindow =
+    getCurrentTimeWindow_(interval);
+
+  var windowsToCheck =
+    Math.ceil(graceSeconds / interval) + 1;
+
+  for (var i = 0; i <= windowsToCheck; i++) {
+    var window = currentWindow - i;
+    var expected =
+      hmacToken_(settings.event_id, window);
+
+    if (expected !== token) {
+      continue;
+    }
+
+    var windowEndsAt =
+      (window + 1) * interval;
+
+    var validUntil =
+      windowEndsAt + graceSeconds;
+
+    if (nowSeconds <= validUntil) {
+      return {
+        valid: true,
+        time_window: window,
+        valid_until: validUntil
+      };
+    }
+
+    return {
+      valid: false,
+      reason: 'expired'
+    };
+  }
+
+  return {
+    valid: false,
+    reason: 'expired'
+  };
 }
 
 function createFormSession_(token) {
@@ -163,19 +189,19 @@ function extendFormSession_(sessionId) {
   }
 
   var check = validateFormSession_(sessionId);
+
   if (!check.valid) {
-    return error_('SESSION_EXPIRED', '填寫時間已過期，請重新掃描 QR Code。');
+    return error_(
+      'SESSION_EXPIRED',
+      '填寫時間已過期，請重新掃描 QR Code。'
+    );
   }
 
-  var ttl = getFormSessionCacheTtl_(settings, check.session);
-  var expiresAt = Math.floor(Date.now() / 1000) + ttl;
-  check.session.expires_at = expiresAt;
-
-  writeFormSession_(sessionId, check.session, ttl);
-
+  // 只檢查目前的 session 是否仍有效。
+  // 不重新計算 expires_at，也不延長有效時間。
   return success_({
     form_session_id: sessionId,
-    expires_at: expiresAt,
+    expires_at: check.session.expires_at || 0,
     stage: check.session.stage || ''
   });
 }
@@ -226,18 +252,39 @@ function writeFormSession_(sessionId, session, ttlSeconds) {
 }
 
 function validateFormSession_(sessionId) {
-  if (!sessionId) return { valid: false, reason: 'missing' };
+  if (!sessionId) {
+    return {
+      valid: false,
+      reason: 'missing'
+    };
+  }
+
   var session = readFormSession_(sessionId);
-  if (!session) return { valid: false, reason: 'expired' };
 
-  if (session.stage === 'pin_pending') {
-    return { valid: true, session: session };
+  if (!session) {
+    return {
+      valid: false,
+      reason: 'expired'
+    };
   }
 
-  if (session.expires_at && session.expires_at < Math.floor(Date.now() / 1000)) {
-    return { valid: false, reason: 'expired' };
+  var nowSeconds =
+    Math.floor(Date.now() / 1000);
+
+  if (
+    session.expires_at &&
+    session.expires_at < nowSeconds
+  ) {
+    return {
+      valid: false,
+      reason: 'expired'
+    };
   }
-  return { valid: true, session: session };
+
+  return {
+    valid: true,
+    session: session
+  };
 }
 
 function lockForPinVerification_(formSessionId, name, phone) {
@@ -265,10 +312,22 @@ function lockForPinVerification_(formSessionId, name, phone) {
     return error_('INVALID_PHONE', '請輸入有效的手機號碼（09xxxxxxxx）');
   }
 
-  var pinTtl = getFormSessionCacheTtl_(settings, { stage: 'pin_pending' });
+
   var normalizedName = normalizeName_(name);
   var normalizedPhone = normalizePhone_(phone);
   var session = check.session;
+
+  var nowSeconds = Math.floor(Date.now() / 1000);
+
+  var remainingTtl =
+    Number(session.expires_at) - nowSeconds;
+
+  if (remainingTtl <= 0) {
+    return error_(
+      'SESSION_EXPIRED',
+      '填寫時間已過期，請重新掃描 QR Code。'
+    );
+  }
 
   session.stage = 'pin_pending';
   session.pin_pending = {
@@ -279,7 +338,11 @@ function lockForPinVerification_(formSessionId, name, phone) {
     locked_at: Date.now()
   };
 
-  writeFormSession_(formSessionId, session, pinTtl);
+  writeFormSession_(
+    formSessionId,
+    session,
+    remainingTtl
+  );
 
   return success_({
     form_session_id: formSessionId,
@@ -292,6 +355,19 @@ function validatePinPendingSession_(formSessionId, name, phone) {
 
   var session = readFormSession_(formSessionId);
   if (!session) return { valid: false, reason: 'expired' };
+
+  var nowSeconds =
+    Math.floor(Date.now() / 1000);
+
+  if (
+    session.expires_at &&
+    session.expires_at < nowSeconds
+  ) {
+    return {
+      valid: false,
+      reason: 'expired'
+    };
+  }
 
   if (session.stage !== 'pin_pending' || !session.pin_pending) {
     return { valid: false, reason: 'not_locked' };
