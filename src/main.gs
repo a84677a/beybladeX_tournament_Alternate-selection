@@ -132,7 +132,16 @@ function routeAction_(action, body) {
 /** 供 admin 頁 google.script.run 呼叫（回傳 plain object，非 ContentService） */
 function apiCall(action, body) {
   try {
-    return runAction_(action, body || {});
+    var result = runAction_(action, body || {});
+
+    if (result == null) {
+      return error_(
+        'EMPTY_RESPONSE',
+        '伺服器沒有回傳資料'
+      );
+    }
+
+    return JSON.parse(JSON.stringify(result));
   } catch (e) {
     Logger.log(e.stack || e.message);
     if (e && e.code) {

@@ -1043,7 +1043,7 @@
       }
       try {
         const res = await post('admin.getDashboard');
-        if (!res.ok) {
+        if (!res || !res.ok) {
           if (!silent) {
             hideDashboardLoading();
             if (res.error && res.error.code !== 'SESSION_EXPIRED') {
