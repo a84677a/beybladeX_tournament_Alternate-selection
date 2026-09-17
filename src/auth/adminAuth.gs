@@ -174,6 +174,13 @@ function adminCheckSession_(token) {
     return error_('SESSION_EXPIRED', 'Session 已失效，請重新登入');
   }
 
+  // 刷新 Cache TTL，避免使用中卻因快取過期被登出
+  CacheService.getScriptCache().put(
+    ADMIN_SESSION_PREFIX + token,
+    JSON.stringify(session),
+    getAdminSessionTtlSeconds_()
+  );
+
   return success_({
     session: {
       role: session.role,

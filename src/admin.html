@@ -565,82 +565,10 @@
       }
     }
 
-    async function refreshRegistrationStatus() {
-      const manageVisible = !document.getElementById('manage-section').classList.contains('hidden');
-      if (!manageVisible || !dashboardReady) return;
-      try {
-        const res = await post('getPublicState');
-        if (res.ok) applyRegistrationStatus(res.data);
-      } catch (e) {
-        // 背景輪詢失敗時不打擾操作
-      }
-    }
-
-    function startStatusPolling() {
-      stopStatusPolling();
-      statusPollTimer = setInterval(refreshRegistrationStatus, STATUS_POLL_MS);
-    }
-
-    function stopStatusPolling() {
-      if (statusPollTimer) {
-        clearInterval(statusPollTimer);
-        statusPollTimer = null;
-      }
-    }
-
-    async function loadDashboard() {
-      if (!dashboardReady) {
-        showDashboardLoading();
-      }
-      const res = await post('admin.getDashboard');
-      if (!res.ok) {
-        hideDashboardLoading();
-        if (res.error && res.error.code !== 'SESSION_EXPIRED') {
-          alert(res.error.message || '載入失敗');
-        }
-        return;
-      }
-      dashboard = res.data;
-      dashboardReady = true;
-      renderDashboard();
-    }
-
-    function showCreateOnly() {
-      stopStatusPolling();
-      document.getElementById('create-section').classList.remove('hidden');
-      document.getElementById('manage-section').classList.add('hidden');
-      document.getElementById('new-event-name').value = getDefaultEventName();
-      document.getElementById('new-session-name').value = getDefaultSessionName();
-    }
-
-    function showManage() {
-      document.getElementById('create-section').classList.add('hidden');
-      document.getElementById('manage-section').classList.remove('hidden');
-      startStatusPolling();
-    }
-
-    function renderDashboard() {
-      hideDashboardLoading();
-      const s = dashboard.settings;
-      if (!dashboard.has_active_event) {
-        showCreateOnly();
-        return;
-      }
-      showManage();
-
-      const label = [s.event_name, s.session_name].filter(Boolean).join('｜');
-      document.getElementById('current-event-label').textContent = '目前場次：' + (label || '-');
-
-      document.getElementById('reg-status').textContent = s.registration_enabled ? '開放' : '關閉';
-      document.getElementById('qr-status').textContent = s.qr_visible ? '顯示' : '隱藏';
-      document.getElementById('reg-count').textContent = dashboard.waitlist_count;
-      document.getElementById('admin-urls').innerHTML =
-        'Display: <a href="' + dashboard.urls.display + '" target="_blank">開啟</a>｜' +
-        'Candidate: <a href="' + dashboard.urls.candidate + '" target="_blank">開啟</a>';
-
+    function renderWaitlistTable(waitlist) {
       const tbody = document.getElementById('waitlist-body');
       tbody.innerHTML = '';
-      dashboard.waitlist.forEach(row => {
+      (waitlist || []).forEach(row => {
         const tr = document.createElement('tr');
 
         const tdNo = document.createElement('td');
@@ -690,6 +618,100 @@
 
         tbody.appendChild(tr);
       });
+    }
+
+    async function refreshRegistrationStatus() {
+      const manageVisible = !document.getElementById('manage-section').classList.contains('hidden');
+      if (!manageVisible || !dashboardReady) return;
+      try {
+        await loadDashboard({ silent: true });
+      } catch (e) {
+        // 背景輪詢失敗時不打擾操作
+      }
+    }
+
+    function startStatusPolling() {
+      stopStatusPolling();
+      statusPollTimer = setInterval(refreshRegistrationStatus, STATUS_POLL_MS);
+    }
+
+    function stopStatusPolling() {
+      if (statusPollTimer) {
+        clearInterval(statusPollTimer);
+        statusPollTimer = null;
+      }
+    }
+
+    async function loadDashboard(options) {
+      const silent = !!(options && options.silent);
+      if (!dashboardReady && !silent) {
+        showDashboardLoading();
+      }
+      try {
+        const res = await post('admin.getDashboard');
+        if (!res.ok) {
+          if (!silent) {
+            hideDashboardLoading();
+            if (res.error && res.error.code !== 'SESSION_EXPIRED') {
+              alert(res.error.message || '載入失敗');
+            }
+          }
+          return false;
+        }
+        dashboard = res.data;
+        dashboardReady = true;
+        renderDashboard({ silent: silent });
+        return true;
+      } catch (err) {
+        if (!silent) {
+          hideDashboardLoading();
+          throw err;
+        }
+        return false;
+      }
+    }
+
+    function showCreateOnly() {
+      stopStatusPolling();
+      document.getElementById('create-section').classList.remove('hidden');
+      document.getElementById('manage-section').classList.add('hidden');
+      document.getElementById('new-event-name').value = getDefaultEventName();
+      document.getElementById('new-session-name').value = getDefaultSessionName();
+    }
+
+    function showManage() {
+      document.getElementById('create-section').classList.add('hidden');
+      document.getElementById('manage-section').classList.remove('hidden');
+      startStatusPolling();
+    }
+
+    function renderDashboard(options) {
+      const silent = !!(options && options.silent);
+      if (!silent) {
+        hideDashboardLoading();
+      }
+      const s = dashboard.settings;
+      if (!dashboard.has_active_event) {
+        showCreateOnly();
+        return;
+      }
+      showManage();
+
+      const label = [s.event_name, s.session_name].filter(Boolean).join('｜');
+      document.getElementById('current-event-label').textContent = '目前場次：' + (label || '-');
+
+      document.getElementById('reg-status').textContent = s.registration_enabled ? '開放' : '關閉';
+      document.getElementById('qr-status').textContent = s.qr_visible ? '顯示' : '隱藏';
+      document.getElementById('reg-count').textContent = dashboard.waitlist_count;
+      document.getElementById('admin-urls').innerHTML =
+        'Display: <a href="' + dashboard.urls.display + '" target="_blank">開啟</a>｜' +
+        'Candidate: <a href="' + dashboard.urls.candidate + '" target="_blank">開啟</a>';
+
+      renderWaitlistTable(dashboard.waitlist);
+
+      if (silent) {
+        return;
+      }
 
       document.getElementById('set-event-name').value = s.event_name || getDefaultEventName();
       document.getElementById('set-session-name').value = s.session_name || getDefaultSessionName();
@@ -1023,8 +1045,16 @@
         };
         hideLoginAlert();
         showApp();
-        await loadDashboard();
+        const loaded = await loadDashboard();
+        if (!loaded) {
+          dashboardReady = false;
+          showLogin();
+          showLoginAlert('無法載入管理資料，請重新登入');
+          return;
+        }
       } catch (err) {
+        dashboardReady = false;
+        showLogin();
         showLoginAlert((err && err.message) || '無法連線伺服器，請確認已部署 Web App 並重新整理');
       } finally {
         UI.setButtonLoading(btn, false);
@@ -1056,8 +1086,14 @@
 
         session = res.data.session;
         showApp();
-        await loadDashboard();
+        const loaded = await loadDashboard();
+        if (!loaded) {
+          dashboardReady = false;
+          showLogin();
+          showLoginAlert('無法載入管理資料，請重新登入');
+        }
       } catch (err) {
+        dashboardReady = false;
         showLogin();
         showLoginAlert((err && err.message) || '無法連線伺服器，請確認已部署 Web App');
       }

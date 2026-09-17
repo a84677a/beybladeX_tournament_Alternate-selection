@@ -255,13 +255,20 @@ function invalidateWaitlistCountCache_() {
   CacheService.getScriptCache().remove(CONFIG.CACHE_PREFIX + 'waitlist_count');
 }
 
+function formatRegisteredAt_(value) {
+  if (!value) return '';
+  var date = value instanceof Date ? value : new Date(value);
+  if (isNaN(date.getTime())) return String(value);
+  return Utilities.formatDate(date, 'Asia/Taipei', 'yyyy/MM/dd HH:mm:ss');
+}
+
 function toPublicWaitlistRow_(row) {
   return {
     waitlist_no: formatWaitlistNo_(row.waitlist_no),
     waitlist_no_raw: row.waitlist_no,
     name: row.name,
     phone_masked: maskPhone_(row.phone),
-    registered_at: row.registered_at,
+    registered_at: formatRegisteredAt_(row.registered_at),
     duplicate_flags: row.duplicate_flags,
     status: row.status
   };
