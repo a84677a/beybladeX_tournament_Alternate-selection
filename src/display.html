@@ -4,8 +4,6 @@
   <meta charset="UTF-8">
   <title>候補登記 Display</title>
   <?!= include('styles'); ?>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
   <div class="container" id="app">
@@ -110,36 +108,21 @@
         return;
       }
 
-      // 先在畫面外建立新的 QR，
-      // 避免先清掉舊 QR 導致閃白。
-      const tempContainer = document.createElement('div');
+      const img = document.createElement('img');
+      img.alt = 'QR Code';
+      img.src =
+        'https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=' +
+        encodeURIComponent(url);
 
-      if (typeof QRCode === 'undefined') {
-        const img = document.createElement('img');
-        img.alt = 'QR Code';
-        img.src =
-          'https://chart.googleapis.com/chart?cht=qr&chs=400x400&chl=' +
-          encodeURIComponent(url);
+      img.onload = function () {
+        container.replaceChildren(img);
+        currentQrUrl = url;
+      };
 
-        img.onload = function () {
-          container.replaceChildren(img);
-          currentQrUrl = url;
-        };
-
-        return;
-      }
-
-      new QRCode(tempContainer, {
-        text: url,
-        width: 400,
-        height: 400,
-        correctLevel: QRCode.CorrectLevel.M
-      });
-
-      // 新 QR 已經完成後，再一次換掉舊 QR。
-      container.replaceChildren(...tempContainer.childNodes);
-
-      currentQrUrl = url;
+      img.onerror = function () {
+        console.error('QR image failed to load');
+        currentQrUrl = '';
+      };
     }
 
     function formatEventTitle(state) {

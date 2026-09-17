@@ -215,7 +215,7 @@ clasp push --force
 
 ## 注意事項
 
-- Google Chart QR API 需網路連線；若不可用可改用 QR 函式庫
+- Display QR 使用外部 QR 圖片服務（需網路連線）；若現場網路受限可改為內嵌 QR 函式庫
 - Admin 需設定 `ADMIN_PIN`；登入後 Session 預設 12 小時有效
 - QR Code 必須使用正式 Apps Script Web App `/exec` 網址，不應使用 HTMLService iframe 內的 `googleusercontent` URL
 
