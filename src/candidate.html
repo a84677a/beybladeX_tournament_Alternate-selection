@@ -103,6 +103,7 @@
     let mode = 'general';
     let pending = null;
     let sessionReady = false;
+    let pinLockoutTimer = null;
     let requestId = (typeof crypto !== 'undefined' && crypto.randomUUID)
       ? crypto.randomUUID()
       : ('req_' + Date.now() + '_' + Math.random().toString(36).slice(2));
@@ -293,7 +294,41 @@
       document.getElementById('pin-phone').textContent = pending.phone.slice(0, 4) + '***' + pending.phone.slice(-3);
       document.getElementById('pin-error').textContent = '';
       document.getElementById('staff-pin').value = '';
+      clearPinLockoutTimer();
+      setPinSubmitEnabled(true);
       show('screen-pin');
+    }
+
+    function clearPinLockoutTimer() {
+      if (pinLockoutTimer) {
+        clearInterval(pinLockoutTimer);
+        pinLockoutTimer = null;
+      }
+    }
+
+    function setPinSubmitEnabled(enabled) {
+      const btn = document.getElementById('btn-pin-submit');
+      const input = document.getElementById('staff-pin');
+      btn.disabled = !enabled;
+      input.disabled = !enabled;
+    }
+
+    function startPinLockout(seconds) {
+      clearPinLockoutTimer();
+      let remaining = Math.max(1, Number(seconds) || 30);
+      setPinSubmitEnabled(false);
+      const errorEl = document.getElementById('pin-error');
+      errorEl.textContent = 'PIN 錯誤次數過多，請 ' + remaining + ' 秒後再試（僅鎖定此裝置，不影響其他選手）。';
+      pinLockoutTimer = setInterval(() => {
+        remaining -= 1;
+        if (remaining <= 0) {
+          clearPinLockoutTimer();
+          setPinSubmitEnabled(true);
+          errorEl.textContent = '';
+          return;
+        }
+        errorEl.textContent = 'PIN 錯誤次數過多，請 ' + remaining + ' 秒後再試（僅鎖定此裝置，不影響其他選手）。';
+      }, 1000);
     }
 
     document.getElementById('btn-pin-submit').addEventListener('click', () => {
@@ -333,9 +368,20 @@
         return;
       }
 
+      const code = res.error?.code;
       const msg = res.error?.message || '登記失敗';
       if (mode === 'counter') {
+        if (code === 'PIN_SESSION_EXHAUSTED' || code === 'SESSION_EXPIRED') {
+          showError('PIN 嘗試次數已用盡', msg || '請重新掃描現場 QR Code 後再登記。');
+          return;
+        }
+        if (code === 'PIN_LOCKED') {
+          startPinLockout(res.error?.lockout_seconds);
+          return;
+        }
         document.getElementById('pin-error').textContent = msg;
+        document.getElementById('staff-pin').value = '';
+        document.getElementById('staff-pin').focus();
       } else {
         document.getElementById('review-error').textContent = msg;
       }

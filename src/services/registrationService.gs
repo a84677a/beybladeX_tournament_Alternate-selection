@@ -59,7 +59,8 @@ function processRegistration_(payload, options) {
   if (options.requirePin) {
     var pinResult = verifyStaffPin_(
       payload.staff_pin,
-      payload.device_id
+      payload.device_id,
+      formSessionId
     );
     if (!pinResult.ok) return pinResult;
   }
@@ -160,26 +161,42 @@ function getReceipt_(receiptToken) {
   return success_(toSuccessPayload_(row));
 }
 
-function verifyStaffPin_(pin, deviceId) {
+function verifyStaffPin_(pin, deviceId, formSessionId) {
   var settings = getAllSettings_();
   var cache = CacheService.getScriptCache();
   var deviceKey = String(deviceId || '').trim();
+  var sessionId = String(formSessionId || '').trim();
+  var maxAttempts = Number(settings.pin_max_attempts) || CONFIG.DEFAULTS.PIN_MAX_ATTEMPTS;
+  var lockoutSeconds = Number(settings.pin_lockout_seconds) || CONFIG.DEFAULTS.PIN_LOCKOUT_SECONDS;
+  var attemptWindowSeconds = Math.max(lockoutSeconds * 10, 300);
 
   if (!deviceKey) {
+    return error_('INVALID_DEVICE_ID', '缺少裝置識別資訊');
+  }
+  if (!sessionId) {
+    return error_('SESSION_EXPIRED', '填寫時間已過期，請重新掃描 QR Code。');
+  }
+
+  var deviceLockKey = CONFIG.CACHE_PREFIX + 'pin_lock_' + deviceKey;
+  var deviceAttemptKey = CONFIG.CACHE_PREFIX + 'pin_attempts_' + deviceKey;
+  var sessionAttemptKey = CONFIG.CACHE_PREFIX + 'pin_sess_' + sessionId;
+
+  if (cache.get(deviceLockKey)) {
     return error_(
-      'INVALID_DEVICE_ID',
-      '缺少裝置識別資訊'
+      'PIN_LOCKED',
+      '此裝置 PIN 錯誤次數過多，請 ' + lockoutSeconds + ' 秒後再試。',
+      { lockout_seconds: lockoutSeconds, scope: 'device' }
     );
   }
 
-  var lockKey =
-    CONFIG.CACHE_PREFIX + 'pin_lock_' + deviceKey;
-
-  var attemptKey =
-    CONFIG.CACHE_PREFIX + 'pin_attempts_' + deviceKey;
-
-  if (cache.get(lockKey)) {
-    return error_('PIN_LOCKED', '驗證碼錯誤次數過多，請於 ' + (settings.pin_lockout_seconds || 30) + ' 秒後再試。');
+  var sessionAttempts = Number(cache.get(sessionAttemptKey) || 0);
+  if (sessionAttempts >= maxAttempts) {
+    clearFormSession_(sessionId);
+    cache.remove(sessionAttemptKey);
+    return error_(
+      'PIN_SESSION_EXHAUSTED',
+      '此登記的 PIN 嘗試次數已用盡，請重新掃描 QR Code 後再試。'
+    );
   }
 
   var storedHash = settings.staff_pin_hash;
@@ -190,17 +207,58 @@ function verifyStaffPin_(pin, deviceId) {
   var salt = getScriptSecret_();
   var inputHash = hashPin_(String(pin || ''), salt);
   if (inputHash !== storedHash) {
-    var attempts = Number(cache.get(attemptKey) || 0) + 1;
-    var maxAttempts = Number(settings.pin_max_attempts) || CONFIG.DEFAULTS.PIN_MAX_ATTEMPTS;
-    cache.put(attemptKey, String(attempts), 300);
-    if (attempts >= maxAttempts) {
-      cache.put(lockKey, '1', Number(settings.pin_lockout_seconds) || CONFIG.DEFAULTS.PIN_LOCKOUT_SECONDS);
-      cache.remove(attemptKey);
-      return error_('PIN_LOCKED', '驗證碼錯誤次數過多，請於 ' + (settings.pin_lockout_seconds || 30) + ' 秒後再試。');
-    }
-    return error_('PIN_INVALID', '工作人員 PIN 錯誤');
+    return recordStaffPinFailure_({
+      cache: cache,
+      deviceLockKey: deviceLockKey,
+      deviceAttemptKey: deviceAttemptKey,
+      sessionAttemptKey: sessionAttemptKey,
+      sessionId: sessionId,
+      maxAttempts: maxAttempts,
+      lockoutSeconds: lockoutSeconds,
+      attemptWindowSeconds: attemptWindowSeconds
+    });
   }
 
-  cache.remove(attemptKey);
+  cache.remove(deviceAttemptKey);
+  cache.remove(sessionAttemptKey);
   return success_({ verified: true });
+}
+
+function recordStaffPinFailure_(input) {
+  var cache = input.cache;
+  var deviceAttempts = Number(cache.get(input.deviceAttemptKey) || 0) + 1;
+  var sessionAttempts = Number(cache.get(input.sessionAttemptKey) || 0) + 1;
+
+  cache.put(input.deviceAttemptKey, String(deviceAttempts), input.attemptWindowSeconds);
+  cache.put(input.sessionAttemptKey, String(sessionAttempts), input.attemptWindowSeconds);
+
+  if (sessionAttempts >= input.maxAttempts) {
+    clearFormSession_(input.sessionId);
+    cache.remove(input.sessionAttemptKey);
+    cache.remove(input.deviceAttemptKey);
+    if (deviceAttempts >= input.maxAttempts) {
+      cache.put(input.deviceLockKey, '1', input.lockoutSeconds);
+    }
+    return error_(
+      'PIN_SESSION_EXHAUSTED',
+      '此登記的 PIN 嘗試次數已用盡，請重新掃描 QR Code 後再試。'
+    );
+  }
+
+  if (deviceAttempts >= input.maxAttempts) {
+    cache.put(input.deviceLockKey, '1', input.lockoutSeconds);
+    cache.remove(input.deviceAttemptKey);
+    return error_(
+      'PIN_LOCKED',
+      '此裝置 PIN 錯誤次數過多，請 ' + input.lockoutSeconds + ' 秒後再試。',
+      { lockout_seconds: input.lockoutSeconds, scope: 'device' }
+    );
+  }
+
+  var remaining = input.maxAttempts - sessionAttempts;
+  return error_(
+    'PIN_INVALID',
+    '工作人員 PIN 錯誤（尚可嘗試 ' + remaining + ' 次）',
+    { remaining_attempts: remaining }
+  );
 }

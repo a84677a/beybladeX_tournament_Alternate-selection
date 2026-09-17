@@ -44,7 +44,8 @@
       if (code === 'DUPLICATE' || code === 'SESSION_EXPIRED' ||
         code === 'REGISTRATION_CLOSED' || code === 'CAPACITY_FULL' ||
         code === 'INVALID_NAME' || code === 'INVALID_PHONE' ||
-        code === 'PIN_INVALID' || code === 'PIN_LOCKED') {
+        code === 'PIN_INVALID' || code === 'PIN_LOCKED' ||
+        code === 'PIN_SESSION_EXHAUSTED') {
         return false;
       }
       return code === 'BUSY' || code === 'INTERNAL_ERROR';

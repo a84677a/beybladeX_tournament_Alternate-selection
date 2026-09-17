@@ -16,7 +16,8 @@
 
 - 一般模式 / 櫃檯核驗模式（Admin 切換）
 - ADMIN PIN + 操作者姓名 + 12 小時 Session
-- PIN Rate Limit（5 分鐘 5 次失敗鎖定）
+- Staff PIN：每登記 session 與每裝置各自限次（預設 3 次；裝置鎖定 30 秒，不影響其他選手）
+- Admin PIN Rate Limit（5 分鐘 5 次失敗鎖定，僅限管理後台登入）
 - QR Rotation + Token TTL 防外流遠端登記
 - LockService Atomic 發號 + request_id 冪等
 - 首次抽選建立完整 random_rank，後續僅追加公布
