@@ -194,7 +194,7 @@
         return;
       }
 
-      const res = await post('validateToken', { token });
+      const res = await UI.postWithRetry(post, 'validateToken', { token });
       if (!res.ok) {
         const code = res.error?.code;
 
@@ -315,7 +315,7 @@
         request_id: requestId,
         form_session_id: formSessionId,
         name: pending.name,
-        phone: pending.phone
+        phone: pending.phone,
         device_id: getDeviceId()
       };
       if (staffPin) payload.staff_pin = staffPin;
