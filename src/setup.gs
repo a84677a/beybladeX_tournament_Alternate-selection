@@ -54,8 +54,8 @@ function buildDefaultSettings_() {
   var defaultPin = CONFIG.DEFAULTS.DEFAULT_STAFF_PIN;
   return {
     event_id: eventId,
-    event_name: '',
-    session_name: '',
+    event_name: CONFIG.DEFAULTS.DEFAULT_EVENT_NAME,
+    session_name: CONFIG.DEFAULTS.DEFAULT_SESSION_NAME,
     event_status: 'NONE',
     registration_enabled: false,
     qr_visible: false,

@@ -89,8 +89,11 @@ function coerceSettings_(raw) {
 }
 
 function isSeedDefaultEventName_(eventName, sessionName) {
-  return String(eventName || '').trim() === 'WF 盃' &&
-    String(sessionName || '第 1 場').trim() === '第 1 場';
+  var name = String(eventName || '').trim();
+  var session = String(sessionName || '').trim();
+  return (name === 'WF 盃' && session === '第 1 場') ||
+    (name === CONFIG.DEFAULTS.DEFAULT_EVENT_NAME &&
+      session === CONFIG.DEFAULTS.DEFAULT_SESSION_NAME);
 }
 
 function resolveEventStatus_(raw) {

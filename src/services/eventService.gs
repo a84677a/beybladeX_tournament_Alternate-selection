@@ -83,7 +83,8 @@ function createEvent_(payload) {
     if (!eventName) {
       return error_('INVALID_NAME', '請輸入活動名稱');
     }
-    var sessionName = String(payload.session_name || '').trim() || '第 1 場';
+    var sessionName = String(payload.session_name || '').trim() ||
+      CONFIG.DEFAULTS.DEFAULT_SESSION_NAME;
 
     var updates = getDefaultOperationalSettings_();
     updates.event_id = Utilities.getUuid();
