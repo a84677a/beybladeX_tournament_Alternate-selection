@@ -281,6 +281,7 @@
     let session = null;
     let dashboardReady = false;
     let statusPollTimer = null;
+    let postQueue = Promise.resolve();
     const STATUS_POLL_MS = 10000;
 
     function getAdminToken() {
@@ -394,20 +395,25 @@
       if (action.indexOf('admin.') === 0 && action !== 'admin.login') {
         payload.token = getAdminToken();
       }
-      return new Promise(function (resolve, reject) {
-        google.script.run
-          .withSuccessHandler(function (res) {
-            if (res && res.error &&
-                (res.error.code === 'SESSION_EXPIRED' || res.error.code === 'FORBIDDEN')) {
-              forceRelogin(res.error.message || 'Session 已失效，請重新登入');
-            }
-            resolve(res);
-          })
-          .withFailureHandler(function (err) {
-            reject(err);
-          })
-          .apiCall(action, payload);
-      });
+      const run = function () {
+        return new Promise(function (resolve, reject) {
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (res && res.error &&
+                  (res.error.code === 'SESSION_EXPIRED' || res.error.code === 'FORBIDDEN')) {
+                forceRelogin(res.error.message || 'Session 已失效，請重新登入');
+              }
+              resolve(res);
+            })
+            .withFailureHandler(function (err) {
+              reject(err);
+            })
+            .apiCall(action, payload);
+        });
+      };
+      const result = postQueue.then(run, run);
+      postQueue = result.catch(function () {});
+      return result;
     }
 
     function switchTab(tab) {
@@ -428,8 +434,9 @@
         state.registration_enabled ? '開放' : '關閉';
       document.getElementById('qr-status').textContent =
         state.qr_visible ? '顯示' : '隱藏';
-      document.getElementById('reg-count').textContent =
-        state.waitlist_count != null ? state.waitlist_count : 0;
+      if (state.waitlist_count != null) {
+        document.getElementById('reg-count').textContent = state.waitlist_count;
+      }
       if (dashboard && dashboard.settings) {
         dashboard.settings.registration_enabled = !!state.registration_enabled;
         dashboard.settings.qr_visible = !!state.qr_visible;
@@ -633,10 +640,28 @@
     document.querySelectorAll('[data-quick]').forEach(btn => {
       btn.addEventListener('click', () => {
         if (btn.disabled) return;
-        if (!confirm('確定要切換為「' + btn.textContent.trim() + '」？')) return;
+        const actionLabel = btn.textContent.trim();
+        const nextState = btn.dataset.quick;
+        if (!confirm('確定要切換為「' + actionLabel + '」？')) return;
         UI.runWithLoading(btn, '切換中…', async () => {
-          await post('admin.setQuickState', { state: btn.dataset.quick });
-          await loadDashboard();
+          stopStatusPolling();
+          try {
+            const res = await post('admin.setQuickState', { state: nextState });
+            if (!res.ok) {
+              alert(res.error?.message || '切換失敗');
+              return;
+            }
+            if (dashboard && res.data) {
+              Object.assign(dashboard.settings, res.data);
+            }
+            applyRegistrationStatus(res.data);
+          } catch (err) {
+            alert((err && err.message) || '無法連線伺服器，請稍後再試');
+          } finally {
+            if (dashboardReady && !document.getElementById('manage-section').classList.contains('hidden')) {
+              startStatusPolling();
+            }
+          }
         });
       });
     });
