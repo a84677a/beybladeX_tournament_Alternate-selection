@@ -20,7 +20,7 @@
         <label for="admin-pin">ADMIN PIN</label>
         <input id="admin-pin" type="password" inputmode="numeric" maxlength="8">
       </div>
-      <button class="btn btn-primary" id="btn-login" style="width:100%">登入</button>
+      <button class="btn btn-primary btn-block" id="btn-login">登入</button>
     </div>
   </div>
 
@@ -41,158 +41,212 @@
     <div class="card hidden" id="create-section">
       <h2>建立新場次</h2>
       <p class="muted">輸入本次比賽名稱即可開始；預設為「不累的盃｜候補測試賽」，也可自由修改。</p>
-      <div class="grid-2">
-        <div class="field">
-          <label for="new-event-name">活動名稱 *</label>
-          <input id="new-event-name" type="text" placeholder="不累的盃">
+      <div class="create-form">
+        <div class="grid-2">
+          <div class="field">
+            <label for="new-event-name">活動名稱 *</label>
+            <input id="new-event-name" type="text" placeholder="不累的盃">
+          </div>
+          <div class="field">
+            <label for="new-session-name">場次名稱</label>
+            <input id="new-session-name" type="text" placeholder="候補測試賽">
+          </div>
         </div>
-        <div class="field">
-          <label for="new-session-name">場次名稱</label>
-          <input id="new-session-name" type="text" placeholder="候補測試賽">
+        <div class="form-actions">
+          <button class="btn btn-primary" id="btn-create-event">建立並開始</button>
         </div>
       </div>
-      <button class="btn btn-primary" id="btn-create-event">建立並開始</button>
     </div>
 
     <div id="manage-section" class="hidden">
-    <p class="muted" id="current-event-label"></p>
-    <div id="admin-urls" class="admin-urls">
-      <p class="muted admin-url-main">
-        Display（現場投影）：<a id="link-display" href="#" target="_blank" rel="noopener">開啟</a>
-      </p>
-      <details class="admin-url-dev">
+    <div class="session-bar card">
+      <div class="session-bar-main">
+        <div class="session-bar-info">
+          <span class="session-bar-label muted">目前場次</span>
+          <span class="session-bar-title" id="current-event-label">-</span>
+        </div>
+        <a class="btn btn-primary session-display-btn" id="link-display" href="#" target="_blank" rel="noopener">開啟 Display</a>
+      </div>
+      <details class="lottery-details session-bar-dev">
         <summary>除錯／部署確認</summary>
-        <p class="muted">
-          Candidate 不可從後台直接登記。以下連結<strong>不含 QR Token</strong>，開啟後若顯示「缺少 QR Token」代表頁面已成功部署；選手請掃 Display 上的 QR Code。
-        </p>
-        <p class="admin-url-dev-action">
-          <a id="link-candidate-dev" href="#" target="_blank" rel="noopener" class="admin-url-dev-link">測試 Candidate 連線（預期會錯）</a>
-        </p>
+        <div class="lottery-details-body">
+          <p class="muted field-hint">
+            Candidate 不可從後台直接登記。以下連結<strong>不含 QR Token</strong>，開啟後若顯示「缺少 QR Token」代表頁面已成功部署；選手請掃 Display 上的 QR Code。
+          </p>
+          <p class="session-bar-dev-action">
+            <a id="link-candidate-dev" href="#" target="_blank" rel="noopener" class="admin-url-dev-link">測試 Candidate 連線（預期會錯）</a>
+          </p>
+        </div>
       </details>
     </div>
 
-    <div class="tabs">
-      <button class="tab active" data-tab="registration">候補管理</button>
-      <button class="tab" data-tab="lottery">抽選管理</button>
-      <button class="tab" data-tab="display">顯示設定</button>
-      <button class="tab" data-tab="system">系統設定</button>
-      <button class="tab" data-tab="data">資料管理</button>
+    <div class="tabs-sticky">
+      <div class="tabs">
+        <button class="tab active" data-tab="registration">候補管理</button>
+        <button class="tab" data-tab="lottery">抽選管理</button>
+        <button class="tab" data-tab="display">顯示設定</button>
+        <button class="tab" data-tab="system">系統設定</button>
+        <button class="tab" data-tab="data">資料管理</button>
+      </div>
     </div>
 
     <div id="panel-registration" class="card">
-      <h2>候補管理</h2>
-      <p>候補狀態：<strong id="reg-status">-</strong>｜QR 顯示：<strong id="qr-status">-</strong>｜人數：<strong id="reg-count">0</strong></p>
-      <div style="display:flex;gap:12px;flex-wrap:wrap;margin:16px 0;">
-        <button class="btn btn-primary" data-quick="OPEN">開放候補</button>
-        <button class="btn btn-secondary" data-quick="PROCESSING">停止新增</button>
-        <button class="btn btn-danger" data-quick="CLOSED">結束候補</button>
+      <div class="panel-header">
+        <h2>候補管理</h2>
+        <div class="status-bar">
+          <div class="status-chip">
+            <span class="status-chip-label">候補</span>
+            <span class="status-chip-value" id="reg-status">-</span>
+          </div>
+          <div class="status-chip">
+            <span class="status-chip-label">QR</span>
+            <span class="status-chip-value" id="qr-status">-</span>
+          </div>
+          <div class="status-chip status-chip-count">
+            <span class="status-chip-label">人數</span>
+            <span class="status-chip-value" id="reg-count">0</span>
+          </div>
+        </div>
       </div>
-      <div id="published-lottery-section" class="hidden" style="margin-bottom:24px;">
-        <h3>抽選公布名單</h3>
+
+      <section class="admin-section">
+        <h3 class="admin-section-title">候補控制</h3>
+        <div class="quick-actions" id="quick-actions">
+          <button class="btn btn-primary" data-quick="OPEN">開放候補</button>
+          <button class="btn btn-secondary" data-quick="PROCESSING">停止新增</button>
+          <button class="btn btn-danger" data-quick="CLOSED">結束候補</button>
+        </div>
+      </section>
+
+      <section id="published-lottery-section" class="admin-section hidden">
+        <h3 class="admin-section-title">抽選公布名單</h3>
         <p class="muted" id="published-lottery-summary">-</p>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;margin:12px 0;">
-          <div class="field" style="margin-bottom:0;min-width:180px;">
+        <div class="filter-bar">
+          <div class="field">
             <label for="published-batch-filter">公布批次</label>
             <select id="published-batch-filter">
               <option value="">全部已公布</option>
             </select>
           </div>
-          <div class="field" style="margin-bottom:0;flex:1;min-width:180px;">
+          <div class="field">
             <label for="published-search">搜尋序號或姓名</label>
             <input id="published-search" type="text" placeholder="例：045 或 王小明">
           </div>
         </div>
-        <table class="table">
-          <thead><tr><th>抽選順位</th><th>序號</th><th>姓名</th><th>電話</th><th>公布批次</th></tr></thead>
-          <tbody id="published-lottery-body"></tbody>
-        </table>
-      </div>
-      <hr id="published-lottery-divider" class="hidden" style="border-color:var(--border);margin:20px 0;">
-      <h3 id="all-waitlist-heading" class="hidden">全部候補登記</h3>
-      <table class="table">
-        <thead><tr><th>序號</th><th>姓名</th><th>電話</th><th>時間</th><th>提示</th></tr></thead>
-        <tbody id="waitlist-body"></tbody>
-      </table>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>抽選順位</th><th>序號</th><th>姓名</th><th>電話</th><th>公布批次</th></tr></thead>
+            <tbody id="published-lottery-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="admin-section">
+        <h3 id="all-waitlist-heading" class="admin-section-title hidden">全部候補登記</h3>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>序號</th><th>姓名</th><th>電話</th><th>時間</th><th>提示</th></tr></thead>
+            <tbody id="waitlist-body"></tbody>
+          </table>
+        </div>
+      </section>
     </div>
 
     <div id="panel-lottery" class="card hidden">
-      <h2>抽選管理</h2>
-      <p class="muted" id="lottery-status">抽選狀態：-</p>
-      <div class="field">
-        <label>首輪公布人數</label>
-        <input id="first-batch-count" type="number" min="1" value="60">
+      <div class="lottery-header">
+        <h2>抽選管理</h2>
+        <p class="lottery-status" id="lottery-status">抽選狀態：-</p>
       </div>
-      <details id="lottery-advanced-details">
-        <summary>進階抽選設定</summary>
-        <div style="margin-top:16px;">
-          <div class="field">
-            <label for="lottery-exclude">排除序號（不參與抽選）</label>
-            <input id="lottery-exclude" type="text" placeholder="例：001, 005, 012">
-            <p class="muted" style="margin-top:4px;font-size:14px;">逗號分隔，可填 #001 或 1</p>
+
+      <div class="lottery-form">
+        <section class="lottery-section">
+          <h3 class="lottery-section-title">首次抽選</h3>
+          <div class="field field-narrow">
+            <label for="first-batch-count">首輪公布人數</label>
+            <input id="first-batch-count" type="number" min="1" value="60">
           </div>
-          <div class="field">
-            <label for="lottery-include">必中首輪（強制納入首輪公布）</label>
-            <input id="lottery-include" type="text" placeholder="例：003, 007">
-            <p class="muted" style="margin-top:4px;font-size:14px;">這些序號會固定在首輪公布範圍內</p>
+          <details id="lottery-advanced-details" class="lottery-details">
+            <summary>進階抽選設定</summary>
+            <div class="lottery-details-body">
+              <div class="field">
+                <label for="lottery-exclude">排除序號（不參與抽選）</label>
+                <input id="lottery-exclude" type="text" placeholder="例：001, 005, 012">
+                <p class="field-hint muted">逗號分隔，可填 #001 或 1</p>
+              </div>
+              <div class="field">
+                <label for="lottery-include">必中首輪（強制納入首輪公布）</label>
+                <input id="lottery-include" type="text" placeholder="例：003, 007">
+                <p class="field-hint muted">這些序號會固定在首輪公布範圍內</p>
+              </div>
+            </div>
+          </details>
+          <div class="lottery-actions">
+            <button class="btn btn-primary" id="btn-run-lottery">開始抽選</button>
+            <button class="btn btn-danger hidden" id="btn-void-lottery">作廢抽選</button>
           </div>
-        </div>
-      </details>
-      <button class="btn btn-primary" id="btn-run-lottery">開始抽選</button>
-      <button class="btn btn-danger hidden" id="btn-void-lottery" style="margin-left:8px;">作廢抽選</button>
-      <p class="muted hidden" id="void-lottery-hint" style="margin-top:8px;font-size:14px;">
-        作廢後將清除抽選結果與公布批次，保留 LotteryAudit 稽核紀錄，可重新執行首次抽選。
-      </p>
-      <hr style="border-color:var(--border);margin:20px 0;">
-      <div class="field">
-        <label>追加公布人數</label>
-        <input id="next-batch-count" type="number" min="1" value="8">
+          <p class="field-hint muted hidden" id="void-lottery-hint">
+            作廢後將清除抽選結果與公布批次，保留 LotteryAudit 稽核紀錄，可重新執行首次抽選。
+          </p>
+        </section>
+
+        <section class="lottery-section">
+          <h3 class="lottery-section-title">追加公布</h3>
+          <div class="lottery-batch-fields">
+            <div class="field field-narrow">
+              <label for="next-batch-count">追加公布人數</label>
+              <input id="next-batch-count" type="number" min="1" value="8">
+            </div>
+            <div class="field">
+              <label for="next-batch-title">追加批次標題（選填）</label>
+              <input id="next-batch-title" type="text" placeholder="例：第2次候補抽選結果">
+            </div>
+          </div>
+          <button class="btn btn-secondary" id="btn-add-batch">建立下一批</button>
+          <div id="batch-list" class="batch-list"></div>
+        </section>
+
+        <details class="lottery-details">
+          <summary>結果顯示設定</summary>
+          <div class="lottery-details-body">
+            <div class="grid-2 lottery-display-grid">
+              <div class="field field-switch">
+                <label for="set-lottery-sort-asc">依候補序號排序</label>
+                <label class="switch">
+                  <input id="set-lottery-sort-asc" type="checkbox">
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+              <div class="field field-switch">
+                <label for="set-show-random-rank">顯示抽選順位</label>
+                <label class="switch">
+                  <input id="set-show-random-rank" type="checkbox">
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+              <div class="field field-switch">
+                <label for="set-show-page-number">顯示頁碼</label>
+                <label class="switch">
+                  <input id="set-show-page-number" type="checkbox">
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+              <div class="field field-narrow">
+                <label for="set-results-per-page">每頁顯示人數</label>
+                <input id="set-results-per-page" type="number" min="1">
+              </div>
+              <div class="field field-narrow">
+                <label for="set-results-columns">每列欄數</label>
+                <input id="set-results-columns" type="number" min="1" placeholder="留空自動">
+              </div>
+              <div class="field field-narrow">
+                <label for="set-carousel-seconds">輪播間隔（秒）</label>
+                <input id="set-carousel-seconds" type="number" min="1">
+              </div>
+            </div>
+            <button class="btn btn-primary" id="btn-save-lottery-display">儲存顯示設定</button>
+          </div>
+        </details>
       </div>
-      <div class="field">
-        <label for="next-batch-title">追加批次標題（選填）</label>
-        <input id="next-batch-title" type="text" placeholder="例：第2次候補抽選結果">
-      </div>
-      <button class="btn btn-secondary" id="btn-add-batch">建立下一批</button>
-      <div id="batch-list" style="margin-top:16px;"></div>
-      <hr style="border-color:var(--border);margin:20px 0;">
-      <details>
-        <summary>結果顯示設定</summary>
-        <div class="grid-2" style="margin-top:16px;">
-          <div class="field field-switch">
-            <label for="set-lottery-sort-asc">依候補序號排序</label>
-            <label class="switch">
-              <input id="set-lottery-sort-asc" type="checkbox">
-              <span class="switch-slider"></span>
-            </label>
-          </div>
-          <div class="field field-switch">
-            <label for="set-show-random-rank">顯示抽選順位</label>
-            <label class="switch">
-              <input id="set-show-random-rank" type="checkbox">
-              <span class="switch-slider"></span>
-            </label>
-          </div>
-          <div class="field field-switch">
-            <label for="set-show-page-number">顯示頁碼</label>
-            <label class="switch">
-              <input id="set-show-page-number" type="checkbox">
-              <span class="switch-slider"></span>
-            </label>
-          </div>
-          <div class="field">
-            <label for="set-results-per-page">每頁顯示人數</label>
-            <input id="set-results-per-page" type="number" min="1">
-          </div>
-          <div class="field">
-            <label for="set-results-columns">每列欄數</label>
-            <input id="set-results-columns" type="number" min="1" placeholder="留空自動">
-          </div>
-          <div class="field">
-            <label for="set-carousel-seconds">輪播間隔（秒）</label>
-            <input id="set-carousel-seconds" type="number" min="1">
-          </div>
-        </div>
-        <button class="btn btn-primary" id="btn-save-lottery-display">儲存顯示設定</button>
-      </details>
     </div>
 
     <div id="panel-display" class="card hidden">
@@ -258,75 +312,123 @@
           </label>
         </div>
 
-        <div class="field">
-          <label for="set-display-title">主標語</label>
-          <input id="set-display-title">
-        </div>
+        <section class="admin-section admin-section-inline">
+          <h3 class="admin-section-title">投影文案</h3>
+          <div class="field">
+            <label for="set-display-title">主標語</label>
+            <input id="set-display-title">
+          </div>
+          <div class="field">
+            <label for="set-display-subtitle">補充說明</label>
+            <textarea id="set-display-subtitle" rows="2"></textarea>
+          </div>
+        </section>
 
-        <div class="field">
-          <label for="set-display-subtitle">補充說明</label>
-          <textarea id="set-display-subtitle" rows="2"></textarea>
+        <div class="form-actions">
+          <button class="btn btn-primary" id="btn-save-display">儲存顯示設定</button>
         </div>
       </div>
-
-      <button class="btn btn-primary" id="btn-save-display">
-        儲存顯示設定
-      </button>
     </div>
 
     <div id="panel-system" class="card hidden">
       <h2>系統設定</h2>
-      <div class="field">
-        <label>登記模式</label>
-        <select id="set-mode">
-          <option value="general">一般模式</option>
-          <option value="counter">櫃檯核驗模式</option>
-        </select>
-      </div>
-      <details>
-        <summary>展開進階設定</summary>
-        <div class="grid-2" style="margin-top:16px;">
-          <div class="field field-switch">
-            <label for="set-qr-rotation">QR Rotation</label>
-            <label class="switch">
-              <input id="set-qr-rotation" type="checkbox">
-              <span class="switch-slider"></span>
-            </label>
-          </div>
 
-          <div class="field field-switch">
-            <label for="set-show-qr-countdown">顯示 QR 更新資訊</label>
-            <label class="switch">
-              <input id="set-show-qr-countdown" type="checkbox">
-              <span class="switch-slider"></span>
-            </label>
-          </div>
-
-          <div class="field"><label>輪換間隔（秒）</label><input id="set-qr-interval" type="number"></div>
-          <div class="field"><label>Token TTL（秒）</label><input id="set-token-ttl" type="number"></div>
-          <div class="field"><label>填表有效時間（秒）</label><input id="set-form-ttl" type="number"></div>
-          <div class="field"><label>Staff PIN 最大嘗試次數</label><input id="set-pin-max-attempts" type="number" min="1" max="10"></div>
-          <div class="field"><label>Staff PIN 鎖定秒數（僅鎖此裝置）</label><input id="set-pin-lockout-seconds" type="number" min="10" max="600"></div>
+      <div class="system-form">
+        <section class="admin-section admin-section-inline">
+          <h3 class="admin-section-title">登記模式</h3>
           <div class="field">
-            <label for="set-staff-pin">Staff PIN（留空則不修改）</label>
-            <input id="set-staff-pin" type="password">
-            <p class="muted" id="set-staff-pin-hint" style="margin-top:4px;"></p>
+            <label for="set-mode">模式</label>
+            <select id="set-mode">
+              <option value="general">一般模式</option>
+              <option value="counter">櫃檯核驗模式</option>
+            </select>
           </div>
+        </section>
+
+        <details class="lottery-details">
+          <summary>進階設定</summary>
+          <div class="lottery-details-body">
+            <h4 class="admin-subsection-title">QR 設定</h4>
+            <div class="grid-2 system-grid">
+              <div class="field field-switch">
+                <label for="set-qr-rotation">QR 自動輪換</label>
+                <label class="switch">
+                  <input id="set-qr-rotation" type="checkbox">
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+              <div class="field field-switch">
+                <label for="set-show-qr-countdown">顯示 QR 更新資訊</label>
+                <label class="switch">
+                  <input id="set-show-qr-countdown" type="checkbox">
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+              <div class="field field-narrow">
+                <label for="set-qr-interval">輪換間隔（秒）</label>
+                <input id="set-qr-interval" type="number">
+              </div>
+            </div>
+
+            <h4 class="admin-subsection-title">Token / 填表時間</h4>
+            <div class="grid-2 system-grid">
+              <div class="field field-narrow">
+                <label for="set-token-ttl">Token TTL（秒）</label>
+                <input id="set-token-ttl" type="number">
+              </div>
+              <div class="field field-narrow">
+                <label for="set-form-ttl">填表有效時間（秒）</label>
+                <input id="set-form-ttl" type="number">
+              </div>
+            </div>
+
+            <h4 class="admin-subsection-title">Staff PIN</h4>
+            <div class="grid-2 system-grid">
+              <div class="field field-narrow">
+                <label for="set-pin-max-attempts">最大嘗試次數</label>
+                <input id="set-pin-max-attempts" type="number" min="1" max="10">
+              </div>
+              <div class="field field-narrow">
+                <label for="set-pin-lockout-seconds">鎖定秒數（僅鎖此裝置）</label>
+                <input id="set-pin-lockout-seconds" type="number" min="10" max="600">
+              </div>
+              <div class="field">
+                <label for="set-staff-pin">Staff PIN（留空則不修改）</label>
+                <input id="set-staff-pin" type="password">
+                <p class="field-hint muted" id="set-staff-pin-hint"></p>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <div class="form-actions">
+          <button class="btn btn-primary" id="btn-save-system">儲存系統設定</button>
         </div>
-      </details>
-      <button class="btn btn-primary" id="btn-save-system" style="margin-top:16px;">儲存系統設定</button>
+      </div>
     </div>
 
     <div id="panel-data" class="card hidden">
       <h2>資料管理</h2>
-      <p class="muted">匯出檔名會包含目前活動名稱。結束現場後請使用「結束並封存」：系統會先備份整份試算表，再清空工作資料。</p>
-      <div style="display:flex;gap:12px;flex-wrap:wrap;">
-        <button class="btn btn-secondary" data-export="waitlist">匯出候補</button>
-        <button class="btn btn-secondary" data-export="lottery">匯出抽選</button>
-        <button class="btn btn-secondary" data-export="full">匯出完整資料</button>
-        <button class="btn btn-danger" id="btn-archive">結束並封存</button>
+
+      <div class="data-form">
+        <section class="admin-section admin-section-inline">
+          <h3 class="admin-section-title">匯出資料</h3>
+          <p class="field-hint muted">匯出檔名會包含目前活動名稱。</p>
+          <div class="action-row">
+            <button class="btn btn-secondary" data-export="waitlist">匯出候補</button>
+            <button class="btn btn-secondary" data-export="lottery">匯出抽選</button>
+            <button class="btn btn-secondary" data-export="full">匯出完整資料</button>
+          </div>
+        </section>
+
+        <section class="admin-section admin-section-danger admin-section-inline">
+          <h3 class="admin-section-title admin-section-title-danger">結束現場</h3>
+          <p class="field-hint muted">系統會先備份整份試算表，再清空工作資料。此操作無法復原（僅備份檔保留資料）。</p>
+          <button class="btn btn-danger" id="btn-archive">結束並封存</button>
+        </section>
+
+        <div id="data-message" class="hidden"></div>
       </div>
-      <p id="data-message" class="muted" style="margin-top:12px;"></p>
     </div>
     </div>
   </div>
@@ -514,6 +616,23 @@
       document.getElementById('login-alert').classList.add('hidden');
     }
 
+    function setDataMessage(content, type) {
+      const el = document.getElementById('data-message');
+      if (!content) {
+        el.className = 'hidden';
+        el.textContent = '';
+        el.innerHTML = '';
+        return;
+      }
+      const alertType = type === 'error' ? 'alert-error' : 'alert-success';
+      el.className = 'alert ' + alertType;
+      if (typeof content === 'string' && content.indexOf('<') !== -1) {
+        el.innerHTML = content;
+      } else {
+        el.textContent = content;
+      }
+    }
+
     function hideBoot() {
       document.getElementById('boot-view').classList.add('hidden');
     }
@@ -591,15 +710,41 @@
 
     document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
 
-    function applyRegistrationStatus(state) {
+    function deriveQuickState(state) {
+      if (state.display_mode === 'OPEN' || state.display_mode === 'PROCESSING' || state.display_mode === 'CLOSED') {
+        return state.display_mode;
+      }
+      if (!state.registration_enabled) return 'CLOSED';
+      return state.qr_visible ? 'OPEN' : 'PROCESSING';
+    }
+
+    function updateRegistrationStatusDisplay(state) {
       if (!state) return;
-      document.getElementById('reg-status').textContent =
-        state.registration_enabled ? '開放' : '關閉';
-      document.getElementById('qr-status').textContent =
-        state.qr_visible ? '顯示' : '隱藏';
+
+      const regEl = document.getElementById('reg-status');
+      const qrEl = document.getElementById('qr-status');
+      const regEnabled = !!state.registration_enabled;
+      const qrVisible = !!state.qr_visible;
+
+      regEl.textContent = regEnabled ? '開放' : '關閉';
+      regEl.className = 'status-chip-value ' + (regEnabled ? 'is-on' : 'is-off');
+
+      qrEl.textContent = qrVisible ? '顯示' : '隱藏';
+      qrEl.className = 'status-chip-value ' + (qrVisible ? 'is-on' : 'is-muted');
+
       if (state.waitlist_count != null) {
         document.getElementById('reg-count').textContent = state.waitlist_count;
       }
+
+      const quickState = deriveQuickState(state);
+      document.querySelectorAll('[data-quick]').forEach(function (btn) {
+        btn.classList.toggle('is-active', btn.dataset.quick === quickState);
+      });
+    }
+
+    function applyRegistrationStatus(state) {
+      if (!state) return;
+      updateRegistrationStatusDisplay(state);
       if (dashboard && dashboard.settings) {
         dashboard.settings.registration_enabled = !!state.registration_enabled;
         dashboard.settings.qr_visible = !!state.qr_visible;
@@ -636,14 +781,12 @@
 
     function renderPublishedLotterySection() {
       const section = document.getElementById('published-lottery-section');
-      const divider = document.getElementById('published-lottery-divider');
       const heading = document.getElementById('all-waitlist-heading');
       const publishedLottery = dashboard && dashboard.published_lottery;
       const entries = (publishedLottery && publishedLottery.entries) || [];
       const hasPublished = entries.length > 0;
 
       section.classList.toggle('hidden', !hasPublished);
-      divider.classList.toggle('hidden', !hasPublished);
       heading.classList.toggle('hidden', !hasPublished);
 
       if (!hasPublished) {
@@ -736,7 +879,20 @@
     function renderWaitlistTable(waitlist, publishedLookup) {
       const tbody = document.getElementById('waitlist-body');
       tbody.innerHTML = '';
-      (waitlist || []).forEach(row => {
+      const rows = waitlist || [];
+
+      if (rows.length === 0) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 5;
+        td.className = 'table-empty muted';
+        td.textContent = '尚無候補登記';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+
+      rows.forEach(row => {
         const tr = document.createElement('tr');
         const published = publishedLookup && publishedLookup[String(row.waitlist_no_raw)];
 
@@ -875,11 +1031,14 @@
       showManage();
 
       const label = [s.event_name, s.session_name].filter(Boolean).join('｜');
-      document.getElementById('current-event-label').textContent = '目前場次：' + (label || '-');
+      document.getElementById('current-event-label').textContent = label || '-';
 
-      document.getElementById('reg-status').textContent = s.registration_enabled ? '開放' : '關閉';
-      document.getElementById('qr-status').textContent = s.qr_visible ? '顯示' : '隱藏';
-      document.getElementById('reg-count').textContent = dashboard.waitlist_count;
+      updateRegistrationStatusDisplay({
+        registration_enabled: s.registration_enabled,
+        qr_visible: s.qr_visible,
+        display_mode: s.display_mode,
+        waitlist_count: dashboard.waitlist_count
+      });
       document.getElementById('link-display').href = dashboard.urls.display;
       document.getElementById('link-candidate-dev').href = dashboard.urls.candidate;
 
@@ -946,10 +1105,10 @@
       batchList.innerHTML = '';
       (dashboard.publish_batches || []).forEach(batch => {
         const div = document.createElement('div');
-        div.style.marginBottom = '8px';
-        div.innerHTML = 'Batch ' + batch.batch_no + '：rank ' + batch.rank_start + '-' + batch.rank_end +
-          '（' + batch.display_title + '）' +
-          ' <button class="btn btn-secondary" data-batch="' + batch.batch_id + '">顯示到 Display</button>';
+        div.className = 'batch-list-item';
+        div.innerHTML = '<span class="batch-list-label">Batch ' + batch.batch_no + '：rank ' + batch.rank_start + '-' + batch.rank_end +
+          '（' + batch.display_title + '）</span>' +
+          ' <button class="btn btn-secondary batch-list-btn" data-batch="' + batch.batch_id + '">顯示到 Display</button>';
         batchList.appendChild(div);
       });
       batchList.querySelectorAll('[data-batch]').forEach(btn => {
@@ -1167,7 +1326,10 @@
         UI.runWithLoading(btn, '匯出中…', async () => {
           const res = await post('admin.export', { type: btn.dataset.export });
           if (res.ok) {
-            document.getElementById('data-message').innerHTML = '匯出完成：<a href="' + res.data.spreadsheet_url + '" target="_blank">開啟試算表</a>';
+            setDataMessage(
+              '匯出完成：<a href="' + res.data.spreadsheet_url + '" target="_blank" rel="noopener">開啟試算表</a>',
+              'success'
+            );
           } else {
             alert(res.error?.message || '匯出失敗');
           }
@@ -1216,7 +1378,7 @@
         }
         let msg = '場次已備份並清空工作資料';
         if (res.data?.export_name) msg += '。備份：' + res.data.export_name;
-        document.getElementById('data-message').textContent = msg;
+        setDataMessage(msg, 'success');
         await loadDashboard();
       });
     });
