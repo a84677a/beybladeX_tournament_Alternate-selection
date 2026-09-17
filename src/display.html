@@ -298,12 +298,12 @@
     }
 
     function renderOpen(state) {
+      showScreen('screen-open');
       const snap = openSnapshot(state);
       if (snap === lastOpenSnapshot) {
         return;
       }
       lastOpenSnapshot = snap;
-      showScreen('screen-open');
 
       document.getElementById('event-title').textContent = formatEventTitle(state);
       document.querySelector('#screen-open .display-status').textContent =

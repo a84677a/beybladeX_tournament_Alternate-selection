@@ -91,6 +91,7 @@ function applyAutoCloseDeadline_(settings) {
     // 若其他 request 正在執行自動關閉，
     // 不讓 Display / Candidate 因為搶不到 Lock 直接報錯
     if (err && err.code === 'BUSY') {
+      invalidateSettingsCache_();
       return getAllSettings_();
     }
 
@@ -114,47 +115,67 @@ function getPublicStateCacheTtl_(settings) {
   return CONFIG.CACHE_TTL.PUBLIC_STATE;
 }
 
-function buildPublicStateBody_(settings) {
+function syncPublicStateFromSettings_(state, settings) {
+  state = state || {};
   var hasActiveEvent = settings.event_status === 'ACTIVE';
 
-  var state = {
-    has_active_event: hasActiveEvent,
-    event_id: settings.event_id,
-    event_name: hasActiveEvent ? (settings.event_name || '') : '',
-    session_name: hasActiveEvent ? (settings.session_name || '') : '',
-    registration_enabled: hasActiveEvent && !!settings.registration_enabled,
-    qr_visible: hasActiveEvent && !!settings.qr_visible,
-    display_mode: hasActiveEvent ? (settings.display_mode || 'CLOSED') : 'CLOSED',
-    deadline: formatDeadlineForDisplay_(settings),
-    show_deadline: !!settings.show_deadline,
-    show_waitlist_count: !!settings.show_waitlist_count,
-    mode: settings.mode || CONFIG.DEFAULTS.MODE,
-    show_qr_countdown: !!settings.show_qr_countdown,
-    display_title: settings.display_title || '',
-    display_subtitle: settings.display_subtitle || '',
-    lottery_status: settings.lottery_status || 'NONE',
-    active_batch_id: settings.active_batch_id || ''
-  };
+  state.has_active_event = hasActiveEvent;
+  state.event_id = settings.event_id;
+  state.event_name = hasActiveEvent ? (settings.event_name || '') : '';
+  state.session_name = hasActiveEvent ? (settings.session_name || '') : '';
+  state.registration_enabled = hasActiveEvent && !!settings.registration_enabled;
+  state.qr_visible = hasActiveEvent && !!settings.qr_visible;
+  state.display_mode = hasActiveEvent ? (settings.display_mode || 'CLOSED') : 'CLOSED';
+  state.deadline = formatDeadlineForDisplay_(settings);
+  state.show_deadline = !!settings.show_deadline;
+  state.show_waitlist_count = !!settings.show_waitlist_count;
+  state.mode = settings.mode || CONFIG.DEFAULTS.MODE;
+  state.show_qr_countdown = !!settings.show_qr_countdown;
+  state.display_title = settings.display_title || '';
+  state.display_subtitle = settings.display_subtitle || '';
+  state.lottery_status = settings.lottery_status || 'NONE';
+  state.active_batch_id = settings.active_batch_id || '';
 
   if (state.display_mode === 'LOTTERY_RESULT' && settings.active_batch_id) {
     state.lottery_display = buildLotteryDisplay_(settings);
+  } else {
+    delete state.lottery_display;
   }
 
   return state;
 }
 
+function buildPublicStateBody_(settings) {
+  return syncPublicStateFromSettings_({}, settings);
+}
+
 function attachVolatilePublicFields_(state, settings) {
-  var qr = buildQrToken_(settings);
-  var candidateUrl = getCandidateUrl_();
+  var hasActiveEvent = settings.event_status === 'ACTIVE';
+  var showQr = hasActiveEvent &&
+    !!settings.registration_enabled &&
+    !!settings.qr_visible;
 
   state.waitlist_count = countActiveWaitlist_();
-  state.qr = {
-    url: candidateUrl + '&token=' + encodeURIComponent(qr.token),
-    token: qr.token,
-    rotation_enabled: qr.rotation_enabled,
-    interval: qr.interval,
-    expires_at: qr.expires_at
-  };
+
+  if (showQr) {
+    var qr = buildQrToken_(settings);
+    var candidateUrl = getCandidateUrl_();
+    state.qr = {
+      url: candidateUrl + '&token=' + encodeURIComponent(qr.token),
+      token: qr.token,
+      rotation_enabled: qr.rotation_enabled,
+      interval: qr.interval,
+      expires_at: qr.expires_at
+    };
+  } else {
+    state.qr = {
+      url: '',
+      token: '',
+      rotation_enabled: false,
+      interval: 0,
+      expires_at: 0
+    };
+  }
 
   return state;
 }
@@ -169,7 +190,8 @@ function getPublicState_() {
   var state;
 
   if (cached) {
-    state = JSON.parse(cached);
+    // 快取命中時仍須同步最新 settings，避免自動截止後狀態滞後
+    state = syncPublicStateFromSettings_(JSON.parse(cached), settings);
   } else {
     state = buildPublicStateBody_(settings);
     cache.put(cacheKey, JSON.stringify(state), getPublicStateCacheTtl_(settings));

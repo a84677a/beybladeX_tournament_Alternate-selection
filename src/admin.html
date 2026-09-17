@@ -280,6 +280,8 @@
     let dashboard = null;
     let session = null;
     let dashboardReady = false;
+    let statusPollTimer = null;
+    const STATUS_POLL_MS = 10000;
 
     function getAdminToken() {
       return localStorage.getItem(ADMIN_TOKEN_KEY) || '';
@@ -378,6 +380,7 @@
     }
 
     function forceRelogin(message) {
+      stopStatusPolling();
       setAdminToken('');
       session = null;
       dashboard = null;
@@ -412,9 +415,50 @@
       ['registration', 'lottery', 'display', 'system', 'data'].forEach(name => {
         document.getElementById('panel-' + name).classList.toggle('hidden', name !== tab);
       });
+      if (tab === 'registration' && dashboardReady) {
+        refreshRegistrationStatus();
+      }
     }
 
     document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+
+    function applyRegistrationStatus(state) {
+      if (!state) return;
+      document.getElementById('reg-status').textContent =
+        state.registration_enabled ? '開放' : '關閉';
+      document.getElementById('qr-status').textContent =
+        state.qr_visible ? '顯示' : '隱藏';
+      document.getElementById('reg-count').textContent =
+        state.waitlist_count != null ? state.waitlist_count : 0;
+      if (dashboard && dashboard.settings) {
+        dashboard.settings.registration_enabled = !!state.registration_enabled;
+        dashboard.settings.qr_visible = !!state.qr_visible;
+        dashboard.settings.display_mode = state.display_mode || dashboard.settings.display_mode;
+      }
+    }
+
+    async function refreshRegistrationStatus() {
+      const manageVisible = !document.getElementById('manage-section').classList.contains('hidden');
+      if (!manageVisible || !dashboardReady) return;
+      try {
+        const res = await post('getPublicState');
+        if (res.ok) applyRegistrationStatus(res.data);
+      } catch (e) {
+        // 背景輪詢失敗時不打擾操作
+      }
+    }
+
+    function startStatusPolling() {
+      stopStatusPolling();
+      statusPollTimer = setInterval(refreshRegistrationStatus, STATUS_POLL_MS);
+    }
+
+    function stopStatusPolling() {
+      if (statusPollTimer) {
+        clearInterval(statusPollTimer);
+        statusPollTimer = null;
+      }
+    }
 
     async function loadDashboard() {
       if (!dashboardReady) {
@@ -434,6 +478,7 @@
     }
 
     function showCreateOnly() {
+      stopStatusPolling();
       document.getElementById('create-section').classList.remove('hidden');
       document.getElementById('manage-section').classList.add('hidden');
       document.getElementById('new-event-name').value = '';
@@ -443,6 +488,7 @@
     function showManage() {
       document.getElementById('create-section').classList.add('hidden');
       document.getElementById('manage-section').classList.remove('hidden');
+      startStatusPolling();
     }
 
     function renderDashboard() {
