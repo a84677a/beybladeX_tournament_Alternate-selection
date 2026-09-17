@@ -74,6 +74,28 @@
         <button class="btn btn-secondary" data-quick="PROCESSING">停止新增</button>
         <button class="btn btn-danger" data-quick="CLOSED">結束候補</button>
       </div>
+      <div id="published-lottery-section" class="hidden" style="margin-bottom:24px;">
+        <h3>抽選公布名單</h3>
+        <p class="muted" id="published-lottery-summary">-</p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin:12px 0;">
+          <div class="field" style="margin-bottom:0;min-width:180px;">
+            <label for="published-batch-filter">公布批次</label>
+            <select id="published-batch-filter">
+              <option value="">全部已公布</option>
+            </select>
+          </div>
+          <div class="field" style="margin-bottom:0;flex:1;min-width:180px;">
+            <label for="published-search">搜尋序號或姓名</label>
+            <input id="published-search" type="text" placeholder="例：045 或 王小明">
+          </div>
+        </div>
+        <table class="table">
+          <thead><tr><th>抽選順位</th><th>序號</th><th>姓名</th><th>電話</th><th>公布批次</th></tr></thead>
+          <tbody id="published-lottery-body"></tbody>
+        </table>
+      </div>
+      <hr id="published-lottery-divider" class="hidden" style="border-color:var(--border);margin:20px 0;">
+      <h3 id="all-waitlist-heading" class="hidden">全部候補登記</h3>
       <table class="table">
         <thead><tr><th>序號</th><th>姓名</th><th>電話</th><th>時間</th><th>提示</th></tr></thead>
         <tbody id="waitlist-body"></tbody>
@@ -302,6 +324,9 @@
     let session = null;
     let dashboardReady = false;
     let statusPollTimer = null;
+    let publishedBatchFilter = '';
+    let publishedSearchQuery = '';
+    let publishedLotteryControlsBound = false;
     let postQueue = Promise.resolve();
     const STATUS_POLL_MS = 10000;
 
@@ -565,11 +590,138 @@
       }
     }
 
-    function renderWaitlistTable(waitlist) {
+    function buildPublishedLookup(publishedLottery) {
+      const map = {};
+      (publishedLottery && publishedLottery.entries || []).forEach(function (entry) {
+        map[String(entry.waitlist_no_raw)] = entry;
+      });
+      return map;
+    }
+
+    function formatPublishedBatchLabel(entry) {
+      if (!entry.batch_no) return '-';
+      const title = entry.batch_title ? '（' + entry.batch_title + '）' : '';
+      return 'Batch ' + entry.batch_no + title;
+    }
+
+    function bindPublishedLotteryControls() {
+      if (publishedLotteryControlsBound) return;
+      publishedLotteryControlsBound = true;
+      document.getElementById('published-batch-filter').addEventListener('change', function () {
+        publishedBatchFilter = this.value;
+        renderPublishedLotterySection();
+      });
+      document.getElementById('published-search').addEventListener('input', function () {
+        publishedSearchQuery = this.value.trim().toLowerCase();
+        renderPublishedLotterySection();
+      });
+    }
+
+    function renderPublishedLotterySection() {
+      const section = document.getElementById('published-lottery-section');
+      const divider = document.getElementById('published-lottery-divider');
+      const heading = document.getElementById('all-waitlist-heading');
+      const publishedLottery = dashboard && dashboard.published_lottery;
+      const entries = (publishedLottery && publishedLottery.entries) || [];
+      const hasPublished = entries.length > 0;
+
+      section.classList.toggle('hidden', !hasPublished);
+      divider.classList.toggle('hidden', !hasPublished);
+      heading.classList.toggle('hidden', !hasPublished);
+
+      if (!hasPublished) {
+        document.getElementById('published-lottery-body').innerHTML = '';
+        return;
+      }
+
+      bindPublishedLotteryControls();
+
+      const batches = publishedLottery.batches || [];
+      const filterEl = document.getElementById('published-batch-filter');
+      const currentFilter = publishedBatchFilter;
+      filterEl.innerHTML = '<option value="">全部已公布</option>';
+      batches.forEach(function (batch) {
+        const option = document.createElement('option');
+        option.value = batch.batch_id;
+        option.textContent = 'Batch ' + batch.batch_no + '：rank ' + batch.rank_start + '-' + batch.rank_end;
+        filterEl.appendChild(option);
+      });
+      if (currentFilter && batches.some(function (batch) { return batch.batch_id === currentFilter; })) {
+        filterEl.value = currentFilter;
+      } else {
+        publishedBatchFilter = '';
+        filterEl.value = '';
+      }
+
+      document.getElementById('published-search').value = publishedSearchQuery;
+
+      let filtered = entries.slice();
+      if (publishedBatchFilter) {
+        filtered = filtered.filter(function (entry) {
+          return entry.batch_id === publishedBatchFilter;
+        });
+      }
+      if (publishedSearchQuery) {
+        filtered = filtered.filter(function (entry) {
+          const noText = String(entry.waitlist_no || '').toLowerCase();
+          const rawText = String(entry.waitlist_no_raw || '').toLowerCase();
+          const nameText = String(entry.name || '').toLowerCase();
+          return noText.indexOf(publishedSearchQuery) !== -1 ||
+            rawText.indexOf(publishedSearchQuery) !== -1 ||
+            nameText.indexOf(publishedSearchQuery) !== -1;
+        });
+      }
+
+      document.getElementById('published-lottery-summary').textContent =
+        '已公布 ' + entries.length + ' 人' +
+        (filtered.length !== entries.length ? '（目前顯示 ' + filtered.length + ' 人）' : '');
+
+      const tbody = document.getElementById('published-lottery-body');
+      tbody.innerHTML = '';
+      if (filtered.length === 0) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 5;
+        td.className = 'muted';
+        td.textContent = '沒有符合條件的公布名單';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+
+      filtered.forEach(function (entry) {
+        const tr = document.createElement('tr');
+
+        const tdRank = document.createElement('td');
+        tdRank.textContent = entry.random_rank;
+
+        const tdNo = document.createElement('td');
+        tdNo.textContent = entry.waitlist_no || '';
+
+        const tdName = document.createElement('td');
+        tdName.textContent = entry.name || '';
+
+        const tdPhone = document.createElement('td');
+        tdPhone.textContent = entry.phone_masked || '';
+
+        const tdBatch = document.createElement('td');
+        tdBatch.textContent = formatPublishedBatchLabel(entry);
+
+        tr.appendChild(tdRank);
+        tr.appendChild(tdNo);
+        tr.appendChild(tdName);
+        tr.appendChild(tdPhone);
+        tr.appendChild(tdBatch);
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderWaitlistTable(waitlist, publishedLookup) {
       const tbody = document.getElementById('waitlist-body');
       tbody.innerHTML = '';
       (waitlist || []).forEach(row => {
         const tr = document.createElement('tr');
+        const published = publishedLookup && publishedLookup[String(row.waitlist_no_raw)];
 
         const tdNo = document.createElement('td');
         tdNo.textContent = row.waitlist_no || '';
@@ -584,6 +736,14 @@
         tdTime.textContent = row.registered_at || '';
 
         const tdFlags = document.createElement('td');
+
+        if (published) {
+          const badge = document.createElement('span');
+          badge.className = 'badge badge-published';
+          badge.textContent = '已公布 順位' + published.random_rank;
+          tdFlags.appendChild(badge);
+          tdFlags.appendChild(document.createTextNode(' '));
+        }
 
         (row.duplicate_flags || '')
           .split(',')
@@ -707,7 +867,9 @@
         'Display: <a href="' + dashboard.urls.display + '" target="_blank">開啟</a>｜' +
         'Candidate: <a href="' + dashboard.urls.candidate + '" target="_blank">開啟</a>';
 
-      renderWaitlistTable(dashboard.waitlist);
+      const publishedLookup = buildPublishedLookup(dashboard.published_lottery);
+      renderPublishedLotterySection();
+      renderWaitlistTable(dashboard.waitlist, publishedLookup);
 
       if (silent) {
         return;

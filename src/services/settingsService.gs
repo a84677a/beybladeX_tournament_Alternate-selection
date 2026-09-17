@@ -248,6 +248,66 @@ function buildLotteryDisplay_(settings) {
   return display;
 }
 
+function isPublishedFlag_(value) {
+  return value === true || String(value).toUpperCase() === 'TRUE';
+}
+
+function buildAdminPublishedLottery_(settings) {
+  if (!settings || !settings.lottery_id) {
+    return { batches: [], entries: [] };
+  }
+
+  var lotteryId = settings.lottery_id;
+  var batches = getPublishBatches_().filter(function (batch) {
+    return batch.lottery_id === lotteryId;
+  }).map(function (batch) {
+    return {
+      batch_id: batch.batch_id,
+      batch_no: Number(batch.batch_no),
+      display_title: batch.display_title || '',
+      rank_start: Number(batch.rank_start),
+      rank_end: Number(batch.rank_end),
+      count: Number(batch.count)
+    };
+  });
+
+  var waitlistByNo = {};
+  getAllWaitlistRows_().forEach(function (row) {
+    waitlistByNo[Number(row.waitlist_no)] = row;
+  });
+
+  var batchById = {};
+  batches.forEach(function (batch) {
+    batchById[batch.batch_id] = batch;
+  });
+
+  var entries = getLotteryResults_().filter(function (row) {
+    return row.lottery_id === lotteryId && isPublishedFlag_(row.is_published);
+  }).map(function (row) {
+    var waitlistNo = Number(row.waitlist_no);
+    var waitlistRow = waitlistByNo[waitlistNo] || {};
+    var batch = batchById[row.published_batch_id] || null;
+    return {
+      waitlist_no: formatWaitlistNo_(waitlistNo),
+      waitlist_no_raw: waitlistNo,
+      random_rank: Number(row.random_rank),
+      batch_id: row.published_batch_id || '',
+      batch_no: batch ? batch.batch_no : '',
+      batch_title: batch ? batch.display_title : '',
+      name: waitlistRow.name || '',
+      phone_masked: maskPhone_(waitlistRow.phone),
+      registered_at: waitlistRow.registered_at || ''
+    };
+  }).sort(function (a, b) {
+    return a.random_rank - b.random_rank;
+  });
+
+  return {
+    batches: batches,
+    entries: entries
+  };
+}
+
 function getAdminDashboard_() {
   requireAdmin_();
 
@@ -255,6 +315,7 @@ function getAdminDashboard_() {
     applyAutoCloseDeadline_(getAllSettings_());
   var waitlist = getAllWaitlistRows_().map(toPublicWaitlistRow_);
   var batches = getPublishBatches_();
+  var publishedLottery = buildAdminPublishedLottery_(settings);
 
   return success_({
     settings: settings,
@@ -266,6 +327,7 @@ function getAdminDashboard_() {
     waitlist: waitlist,
     waitlist_count: waitlist.length,
     publish_batches: batches,
+    published_lottery: publishedLottery,
     urls: {
       display: getDisplayUrl_(),
       candidate: getCandidateUrl_(),
