@@ -165,7 +165,9 @@ function attachVolatilePublicFields_(state, settings) {
       token: qr.token,
       rotation_enabled: qr.rotation_enabled,
       interval: qr.interval,
-      expires_at: qr.expires_at
+      expires_at: qr.expires_at,
+      server_now:
+        Math.floor(Date.now() / 1000)
     };
   } else {
     state.qr = {

@@ -394,19 +394,60 @@
     }
 
     function getNextRefreshDelay() {
-      if (lastState && getViewMode(lastState) === 'open') {
-        const qr = lastState.qr || {};
+      const view =
+        lastState
+          ? getViewMode(lastState)
+          : 'no-state';
 
-        if (qr.rotation_enabled && qr.expires_at) {
-          const untilExpiry =
-            qr.expires_at * 1000 - Date.now();
+      const qr =
+        lastState && lastState.qr
+          ? lastState.qr
+          : {};
 
-          return Math.max(
-            200,
-            Math.min(10000, untilExpiry + 200)
-          );
+      console.log(
+        '[QR refresh]',
+        {
+          view: view,
+          rotation_enabled: qr.rotation_enabled,
+          interval: qr.interval,
+          expires_at: qr.expires_at,
+          now: Math.floor(Date.now() / 1000),
+          pollIntervalMs: pollIntervalMs
         }
+      );
+
+      if (
+        lastState &&
+        view === 'open' &&
+        qr.rotation_enabled &&
+        qr.expires_at
+      ) {
+        const untilExpiry =
+         (qr.expires_at - qr.server_now) * 1000;
+
+        const delay =
+          Math.max(
+            200,
+            Math.min(
+              10000,
+              untilExpiry + 200
+            )
+          );
+
+        console.log(
+          '[QR refresh] untilExpiry =',
+          untilExpiry,
+          'delay =',
+          delay
+        );
+
+        return delay;
       }
+
+      console.log(
+        '[QR refresh] fallback =',
+        pollIntervalMs
+      );
 
       return pollIntervalMs;
     }
