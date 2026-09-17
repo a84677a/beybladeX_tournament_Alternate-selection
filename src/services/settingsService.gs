@@ -258,6 +258,7 @@ function getAdminDashboard_() {
 
   return success_({
     settings: settings,
+    default_staff_pin: CONFIG.DEFAULTS.DEFAULT_STAFF_PIN,
     has_active_event: settings.event_status === 'ACTIVE',
     event_label: buildEventLabel_(settings),
     waitlist: waitlist,

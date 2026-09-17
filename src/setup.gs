@@ -51,7 +51,7 @@ function setupWaitlistSystem() {
 
 function buildDefaultSettings_() {
   var eventId = Utilities.getUuid();
-  var defaultPin = '1234';
+  var defaultPin = CONFIG.DEFAULTS.DEFAULT_STAFF_PIN;
   return {
     event_id: eventId,
     event_name: '',

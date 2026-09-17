@@ -107,7 +107,7 @@ setSpreadsheetId('YOUR_SPREADSHEET_ID');
 - LotteryAudit（隱藏）
 - AuditLog
 
-預設 Staff PIN：`1234`（請於 Admin 後台立即修改）
+預設 Staff PIN：`0313`（請於 Admin 後台立即修改）
 
 ### 5. 部署 Web App
 

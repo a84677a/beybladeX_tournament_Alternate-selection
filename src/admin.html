@@ -253,7 +253,11 @@
           <div class="field"><label>填表有效時間（秒）</label><input id="set-form-ttl" type="number"></div>
           <div class="field"><label>Staff PIN 最大嘗試次數</label><input id="set-pin-max-attempts" type="number" min="1" max="10"></div>
           <div class="field"><label>Staff PIN 鎖定秒數（僅鎖此裝置）</label><input id="set-pin-lockout-seconds" type="number" min="10" max="600"></div>
-          <div class="field"><label>Staff PIN（留空則不修改）</label><input id="set-staff-pin" type="password"></div>
+          <div class="field">
+            <label for="set-staff-pin">Staff PIN（留空則不修改）</label>
+            <input id="set-staff-pin" type="password">
+            <p class="muted" id="set-staff-pin-hint" style="margin-top:4px;"></p>
+          </div>
         </div>
       </details>
       <button class="btn btn-primary" id="btn-save-system" style="margin-top:16px;">儲存系統設定</button>
@@ -604,6 +608,8 @@
       document.getElementById('set-form-ttl').value = s.form_session_ttl || 70;
       document.getElementById('set-pin-max-attempts').value = s.pin_max_attempts || 3;
       document.getElementById('set-pin-lockout-seconds').value = s.pin_lockout_seconds || 30;
+      document.getElementById('set-staff-pin-hint').textContent =
+        '預設 PIN：' + (dashboard.default_staff_pin || '0313') + '（首次初始化時使用；留空則不修改現有 PIN）';
       document.getElementById('first-batch-count').value = s.lottery_first_batch_count || 60;
       document.getElementById('lottery-status').textContent =
         '抽選狀態：' + (s.lottery_locked ? '已完成（不可重抽）' : '尚未抽選');
