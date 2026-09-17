@@ -151,7 +151,7 @@ function runInitialLottery_(firstBatchCount, advancedRules) {
     sheet.deleteRows(2, lastRow - 1);
   }
   if (rows.length > 0) {
-    sheet.getRange(2, 1, rows.length + 1, LOTTERY_RESULT_HEADERS.length).setValues(rows);
+    sheet.getRange(2, 1, rows.length, LOTTERY_RESULT_HEADERS.length).setValues(rows);
   }
 
   var batchResult = createPublishBatch_(firstBatchCount, lotteryId, 1, '候補抽選結果');
