@@ -56,7 +56,20 @@
 
     <div id="manage-section" class="hidden">
     <p class="muted" id="current-event-label"></p>
-    <p class="muted" id="admin-urls"></p>
+    <div id="admin-urls" class="admin-urls">
+      <p class="muted admin-url-main">
+        Display（現場投影）：<a id="link-display" href="#" target="_blank" rel="noopener">開啟</a>
+      </p>
+      <details class="admin-url-dev">
+        <summary>除錯／部署確認</summary>
+        <p class="muted">
+          Candidate 不可從後台直接登記。以下連結<strong>不含 QR Token</strong>，開啟後若顯示「缺少 QR Token」代表頁面已成功部署；選手請掃 Display 上的 QR Code。
+        </p>
+        <p class="admin-url-dev-action">
+          <a id="link-candidate-dev" href="#" target="_blank" rel="noopener" class="admin-url-dev-link">測試 Candidate 連線（預期會錯）</a>
+        </p>
+      </details>
+    </div>
 
     <div class="tabs">
       <button class="tab active" data-tab="registration">候補管理</button>
@@ -867,9 +880,8 @@
       document.getElementById('reg-status').textContent = s.registration_enabled ? '開放' : '關閉';
       document.getElementById('qr-status').textContent = s.qr_visible ? '顯示' : '隱藏';
       document.getElementById('reg-count').textContent = dashboard.waitlist_count;
-      document.getElementById('admin-urls').innerHTML =
-        'Display: <a href="' + dashboard.urls.display + '" target="_blank">開啟</a>｜' +
-        'Candidate: <a href="' + dashboard.urls.candidate + '" target="_blank">開啟</a>';
+      document.getElementById('link-display').href = dashboard.urls.display;
+      document.getElementById('link-candidate-dev').href = dashboard.urls.candidate;
 
       const publishedLookup = buildPublishedLookup(dashboard.published_lottery);
       renderPublishedLotterySection();
