@@ -317,19 +317,21 @@ function lockForPinVerification_(formSessionId, name, phone) {
   var normalizedPhone = normalizePhone_(phone);
   var session = check.session;
 
-  var nowSeconds = Math.floor(Date.now() / 1000);
+  var nowSeconds =
+    Math.floor(Date.now() / 1000);
 
-  var remainingTtl =
-    Number(session.expires_at) - nowSeconds;
-
-  if (remainingTtl <= 0) {
-    return error_(
-      'SESSION_EXPIRED',
-      '填寫時間已過期，請重新掃描 QR Code。'
+  var pinSessionTtl =
+    Math.min(
+      Number(settings.pin_session_ttl) ||
+        CONFIG.DEFAULTS.PIN_SESSION_TTL,
+      21600
     );
-  }
+
+  var pinExpiresAt =
+    nowSeconds + pinSessionTtl;
 
   session.stage = 'pin_pending';
+  session.expires_at = pinExpiresAt;
   session.pin_pending = {
     name: String(name).trim(),
     phone: normalizedPhone,
@@ -341,7 +343,7 @@ function lockForPinVerification_(formSessionId, name, phone) {
   writeFormSession_(
     formSessionId,
     session,
-    remainingTtl
+    pinSessionTtl
   );
 
   return success_({
