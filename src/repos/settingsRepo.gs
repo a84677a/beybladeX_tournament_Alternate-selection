@@ -64,7 +64,7 @@ function setSettings_(updates) {
 function coerceSettings_(raw) {
   var boolKeys = [
     'registration_enabled', 'qr_visible', 'qr_rotation', 'show_deadline',
-    'auto_close_deadline', 'show_waitlist_count', 'lottery_locked',
+    'auto_close_deadline', 'show_waitlist_count', 'show_display_image', 'lottery_locked',
     'show_qr_countdown', 'show_page_number', 'lottery_sort_asc', 'show_random_rank'
   ];
   var numKeys = [
@@ -87,6 +87,9 @@ function coerceSettings_(raw) {
   }
   if (raw.show_waitlist_count === undefined || raw.show_waitlist_count === '') {
     raw.show_waitlist_count = CONFIG.DEFAULTS.SHOW_WAITLIST_COUNT;
+  }
+  if (raw.show_display_image === undefined || raw.show_display_image === '') {
+    raw.show_display_image = CONFIG.DEFAULTS.SHOW_DISPLAY_IMAGE;
   }
   numKeys.forEach(function (key) {
     if (raw[key] !== undefined && raw[key] !== '') {

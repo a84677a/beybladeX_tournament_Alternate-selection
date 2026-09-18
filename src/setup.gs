@@ -56,6 +56,11 @@ function seedDefaultSettings_(ss) {
 function setupWaitlistSystem() {
   PropertiesService.getScriptProperties().deleteProperty('WAITLIST_SYSTEM_INITIALIZED');
   ensureWaitlistSystemInitialized_();
+  try {
+    authorizeDriveAccess();
+  } catch (err) {
+    Logger.log('Drive 授權提示：請手動執行 authorizeDriveAccess() — ' + (err.message || err));
+  }
   Logger.log('候補系統初始化完成');
   Logger.log('Web App URL: ' + ScriptApp.getService().getUrl());
 }
@@ -90,6 +95,8 @@ function buildDefaultSettings_() {
     active_batch_id: '',
     display_title: '',
     display_subtitle: '',
+    display_image_file_id: '',
+    show_display_image: CONFIG.DEFAULTS.SHOW_DISPLAY_IMAGE,
     show_qr_countdown: true,
     results_per_page: CONFIG.DEFAULTS.RESULTS_PER_PAGE,
     results_columns: '',

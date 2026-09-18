@@ -2,6 +2,10 @@ function doGet(e) {
   e = e || {};
   var page = (e.parameter && e.parameter.page) || 'display';
 
+  if (page === 'display-image') {
+    return serveDisplayImage_();
+  }
+
   switch (page) {
     case 'candidate':
       return renderPage_('candidate', '候補登記', e);
@@ -52,6 +56,8 @@ function dispatchAction_(action, body) {
   switch (action) {
     case 'getPublicState':
       return getPublicState_();
+    case 'getPublicDisplayImage':
+      return getPublicDisplayImage_();
     case 'validateToken':
       return createFormSession_(body.token);
     case 'extendFormSession':
@@ -90,6 +96,16 @@ function dispatchAction_(action, body) {
       return setQrVisible_(body.visible);
     case 'admin.updateSettings':
       return updateSettings_(body.settings);
+    case 'admin.uploadDisplayImage':
+      return uploadDisplayImage_(body);
+    case 'admin.removeDisplayImage':
+      return removeDisplayImage_();
+    case 'admin.checkDriveAccess':
+      return checkDriveAccess_();
+    case 'admin.getDriveAuthUrl':
+      return getDriveAuthUrl_();
+    case 'admin.getDisplayImagePreview':
+      return getDisplayImagePreview_();
     case 'admin.runInitialLottery':
       return runInitialLottery_(body.first_batch_count, body.advanced_rules);
     case 'admin.voidLottery':

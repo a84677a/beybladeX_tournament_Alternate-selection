@@ -276,7 +276,7 @@
 
         <section class="deadline-panel">
           <div class="deadline-panel-top">
-            <span class="deadline-panel-title">候補截止</span>
+            <span class="deadline-panel-title">候補截止時間</span>
             <span id="deadline-preview" class="deadline-preview muted">未設定</span>
           </div>
 
@@ -320,6 +320,39 @@
             <span class="switch-slider"></span>
           </label>
         </div>
+
+        <section class="admin-section admin-section-inline">
+          <h3 class="admin-section-title">投影圖片</h3>
+          <p class="muted field-hint">支援 JPG / PNG / WebP，最大 2MB。上傳後可選擇是否在 Display 右側顯示。</p>
+          <p id="display-image-drive-status" class="muted field-hint hidden"></p>
+          <div class="display-image-admin">
+            <img id="display-image-preview" class="display-image-preview hidden" alt="投影圖片預覽">
+            <div class="display-image-admin-actions">
+              <input id="display-image-input" type="file" accept="image/jpeg,image/png,image/webp" class="hidden">
+              <button type="button" class="btn btn-secondary" id="btn-check-drive-access">授權 Google Drive</button>
+              <button type="button" class="btn btn-secondary" id="btn-pick-display-image">選擇圖片</button>
+              <button type="button" class="btn btn-secondary" id="btn-remove-display-image" disabled>移除圖片</button>
+            </div>
+          </div>
+          <details class="lottery-details">
+            <summary>投影圖片需 Drive 授權（首次必做）</summary>
+            <div class="lottery-details-body">
+              <p class="muted field-hint">首次上傳前，請按「<strong>授權 Google Drive</strong>」或「選擇圖片」，系統會在瀏覽器新視窗開啟 Google 授權頁。</p>
+              <ol class="admin-steps-list">
+                <li>使用<strong>部署 Web App 的 Google 帳號</strong>登入 Admin</li>
+                <li>按「授權 Google Drive」→ 在新視窗按「允許」</li>
+                <li>回到 Admin 再按「選擇圖片」上傳</li>
+              </ol>
+            </div>
+          </details>
+          <div class="field field-switch">
+            <label for="set-show-display-image">顯示投影圖片</label>
+            <label class="switch">
+              <input id="set-show-display-image" type="checkbox">
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+        </section>
 
         <section class="admin-section admin-section-inline">
           <h3 class="admin-section-title">投影文案</h3>
@@ -472,6 +505,8 @@
     let statusPollInFlight = false;
     const STATUS_POLL_MS = 10000;
     const WAITLIST_PAGE_SIZE = 50;
+    const DISPLAY_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+    const DISPLAY_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
     function getAdminToken() {
       return localStorage.getItem(ADMIN_TOKEN_KEY) || '';
@@ -497,6 +532,198 @@
 
     function getDefaultSessionName() {
       return (dashboard && dashboard.default_session_name) || '候補測試賽';
+    }
+
+    function syncDriveAccessStatus(message, isError) {
+      const el = document.getElementById('display-image-drive-status');
+      if (!el) return;
+      if (!message) {
+        el.classList.add('hidden');
+        el.textContent = '';
+        return;
+      }
+      el.classList.remove('hidden');
+      el.textContent = message;
+      el.style.color = isError ? '#f87171' : '';
+    }
+
+    function openDriveAuthWindow(authUrl) {
+      if (!authUrl) {
+        UI.showToast('無法取得授權連結。請確認您使用的是部署 Web App 的 Google 帳號。', 'error');
+        return false;
+      }
+
+      const win = window.open(authUrl, '_blank', 'noopener,noreferrer');
+      if (!win) {
+        UI.showToast('瀏覽器阻擋了彈出視窗，請允許此網站的彈出視窗後再試。', 'error');
+        return false;
+      }
+
+      syncDriveAccessStatus('請在新視窗完成 Google 授權，完成後再試一次上傳。', true);
+      UI.showToast('已開啟授權視窗，完成後請再試一次', 'success');
+      return true;
+    }
+
+    function handleDriveAuthResponse(res, options) {
+      options = options || {};
+      if (!res || res.ok) return false;
+
+      const authUrl = res.error?.auth_url || res.data?.auth_url || '';
+      if (res.error?.code === 'DRIVE_AUTH_REQUIRED' && authUrl) {
+        if (!options.silent) {
+          openDriveAuthWindow(authUrl);
+        } else {
+          syncDriveAccessStatus('需要 Google Drive 授權，請按「授權 Google Drive」', true);
+        }
+        return true;
+      }
+      return false;
+    }
+
+    async function promptDriveAuthorization(options) {
+      options = options || {};
+      const res = await post('admin.getDriveAuthUrl', {});
+      if (res.ok && res.data.authorized) {
+        syncDriveAccessStatus(res.data.message || 'Google Drive 授權正常', false);
+        if (!options.silent) {
+          UI.showToast(res.data.message || 'Google Drive 授權正常', 'success');
+        }
+        return true;
+      }
+
+      if (res.ok && res.data.auth_url) {
+        if (!options.silent) {
+          openDriveAuthWindow(res.data.auth_url);
+        }
+        return false;
+      }
+
+      if (handleDriveAuthResponse(res, options)) {
+        return false;
+      }
+
+      const message = res.error?.message || res.data?.message || 'Google Drive 尚未授權';
+      syncDriveAccessStatus(message, true);
+      if (!options.silent) {
+        UI.showToast(message, 'error');
+      }
+      return false;
+    }
+
+    async function checkDriveAccess(options) {
+      options = options || {};
+      const res = await post('admin.checkDriveAccess', {});
+      if (res.ok) {
+        syncDriveAccessStatus(res.data.message || 'Google Drive 授權正常', false);
+        if (!options.silent) {
+          UI.showToast(res.data.message || 'Google Drive 授權正常', 'success');
+        }
+        return true;
+      }
+
+      if (handleDriveAuthResponse(res, options)) {
+        return false;
+      }
+
+      const message = res.error?.message || 'Google Drive 尚未授權';
+      syncDriveAccessStatus(message, true);
+      if (!options.silent) {
+        UI.showToast(message, 'error');
+      }
+      return false;
+    }
+
+    async function syncDisplayImagePreview(settings, localDataUrl) {
+      settings = settings || (dashboard && dashboard.settings) || {};
+      const preview = document.getElementById('display-image-preview');
+      const removeBtn = document.getElementById('btn-remove-display-image');
+      const showToggle = document.getElementById('set-show-display-image');
+      const hasImage = !!(settings.display_image_file_id);
+
+      if (removeBtn) {
+        removeBtn.disabled = !hasImage;
+      }
+      if (showToggle) {
+        showToggle.disabled = !hasImage;
+        if (!hasImage) {
+          showToggle.checked = false;
+        }
+      }
+      if (!preview) return;
+
+      if (!hasImage) {
+        preview.removeAttribute('src');
+        preview.classList.add('hidden');
+        return;
+      }
+
+      preview.classList.remove('hidden');
+
+      if (localDataUrl) {
+        preview.src = localDataUrl;
+        return;
+      }
+
+      try {
+        const res = await post('admin.getDisplayImagePreview', {});
+        if (res.ok && res.data.has_image && res.data.data_url) {
+          preview.src = res.data.data_url;
+          return;
+        }
+        handleDriveAuthResponse(res, { silent: true });
+      } catch (e) {
+        console.warn('display image preview failed', e);
+      }
+
+      if (settings.display_image_url) {
+        preview.src = settings.display_image_url;
+      }
+    }
+
+    async function uploadDisplayImageFile(file) {
+      if (!file) return;
+
+      if (DISPLAY_IMAGE_TYPES.indexOf(file.type) === -1) {
+        UI.showToast('僅支援 JPG、PNG、WebP 圖片', 'error');
+        return;
+      }
+      if (file.size > DISPLAY_IMAGE_MAX_BYTES) {
+        UI.showToast('圖片大小不可超過 2MB', 'error');
+        return;
+      }
+
+      const dataUrl = await new Promise(function (resolve, reject) {
+        const reader = new FileReader();
+        reader.onload = function () { resolve(reader.result); };
+        reader.onerror = function () { reject(new Error('無法讀取圖片')); };
+        reader.readAsDataURL(file);
+      });
+
+      const base64 = String(dataUrl).split(',')[1];
+      const res = await post('admin.uploadDisplayImage', {
+        data: base64,
+        mimeType: file.type
+      });
+
+      if (!res.ok) {
+        if (handleDriveAuthResponse(res)) {
+          return;
+        }
+        UI.showToast(res.error?.message || '上傳失敗', 'error');
+        return;
+      }
+
+      applyMutationDashboard(res, { silent: true });
+      if (dashboard && dashboard.settings) {
+        dashboard.settings.show_display_image = true;
+      }
+      const showToggle = document.getElementById('set-show-display-image');
+      if (showToggle) {
+        showToggle.checked = true;
+        showToggle.disabled = false;
+      }
+      await syncDisplayImagePreview(dashboard.settings, dataUrl);
+      UI.showToast('圖片已上傳', 'success');
     }
 
     function parseWaitlistNos(str) {
@@ -1474,6 +1701,11 @@
       document.getElementById('set-show-waitlist-count').checked =
         !!s.show_waitlist_count;
 
+      document.getElementById('set-show-display-image').checked =
+        !!s.show_display_image;
+      syncDisplayImagePreview(s);
+      checkDriveAccess({ silent: true });
+
       document.getElementById('set-display-title').value =
         s.display_title || '';
 
@@ -1703,6 +1935,9 @@
             show_waitlist_count:
               document.getElementById('set-show-waitlist-count').checked,
 
+            show_display_image:
+              document.getElementById('set-show-display-image').checked,
+
             display_title:
               document.getElementById('set-display-title').value,
 
@@ -1924,6 +2159,46 @@
     });
     document.getElementById('set-deadline').addEventListener('input', syncDeadlineUi);
     document.getElementById('set-deadline').addEventListener('change', syncDeadlineUi);
+
+    document.getElementById('btn-check-drive-access').addEventListener('click', () => {
+      const btn = document.getElementById('btn-check-drive-access');
+      UI.runWithLoading(btn, '開啟中…', async () => {
+        await promptDriveAuthorization({ silent: false });
+      });
+    });
+
+    document.getElementById('btn-pick-display-image').addEventListener('click', () => {
+      document.getElementById('display-image-input').click();
+    });
+
+    document.getElementById('display-image-input').addEventListener('change', () => {
+      const input = document.getElementById('display-image-input');
+      const file = input.files && input.files[0];
+      input.value = '';
+      if (!file) return;
+
+      const btn = document.getElementById('btn-pick-display-image');
+      UI.runWithLoading(btn, '上傳中…', async () => {
+        await uploadDisplayImageFile(file);
+      });
+    });
+
+    document.getElementById('btn-remove-display-image').addEventListener('click', () => {
+      const btn = document.getElementById('btn-remove-display-image');
+      if (btn.disabled) return;
+      if (!confirm('確定要移除投影圖片？')) return;
+
+      UI.runWithLoading(btn, '移除中…', async () => {
+        const res = await post('admin.removeDisplayImage', {});
+        if (!res.ok) {
+          UI.showToast(res.error?.message || '移除失敗', 'error');
+          return;
+        }
+        applyMutationDashboard(res, { silent: true });
+        await syncDisplayImagePreview(dashboard.settings);
+        UI.showToast('已移除投影圖片', 'success');
+      });
+    });
 
     bootApp();
   </script>

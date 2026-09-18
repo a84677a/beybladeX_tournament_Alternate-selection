@@ -129,6 +129,13 @@ function syncPublicStateFromSettings_(state, settings) {
   state.deadline = formatDeadlineForDisplay_(settings);
   state.show_deadline = !!settings.show_deadline;
   state.show_waitlist_count = !!settings.show_waitlist_count;
+  state.show_display_image = !!settings.show_display_image;
+  state.display_image_file_id = settings.show_display_image
+    ? (settings.display_image_file_id || '')
+    : '';
+  state.display_image_url = state.display_image_file_id
+    ? getDisplayImageUrl_(state.display_image_file_id)
+    : '';
   state.mode = settings.mode || CONFIG.DEFAULTS.MODE;
   state.show_qr_countdown = !!settings.show_qr_countdown;
   state.display_title = settings.display_title || '';
@@ -398,6 +405,10 @@ function buildAdminDashboardData_() {
     return toAdminWaitlistRow_(row, waitlistContext);
   });
 
+  settings.display_image_url = settings.display_image_file_id
+    ? getDisplayImageUrl_(settings.display_image_file_id)
+    : '';
+
   return {
     settings: settings,
     default_staff_pin: CONFIG.DEFAULTS.DEFAULT_STAFF_PIN,
@@ -458,6 +469,13 @@ function updateSettings_(updates) {
   if (updates.staff_pin) {
     updates.staff_pin_hash = hashPin_(String(updates.staff_pin), getScriptSecret_());
     delete updates.staff_pin;
+  }
+
+  if (updates.show_display_image) {
+    var currentSettings = getAllSettings_();
+    if (!currentSettings.display_image_file_id) {
+      updates.show_display_image = false;
+    }
   }
 
   setSettings_(updates);

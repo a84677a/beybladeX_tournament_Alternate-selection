@@ -5,24 +5,35 @@
   <title>候補登記 Display</title>
   <?!= include('styles'); ?>
 </head>
-<body>
-  <div class="container" id="app">
-    <div id="screen-open" class="hidden">
-      <div class="display-title" id="event-title">活動名稱｜場次</div>
-      <div class="display-status">候補登記開放中</div>
-      <div class="grid-2">
-        <div class="card">
+<body class="display-page">
+  <div class="container display-container" id="app">
+    <div id="screen-open" class="hidden display-screen">
+      <div class="display-header">
+        <div class="display-title" id="event-title">活動名稱｜場次</div>
+        <div class="display-status">候補登記開放中</div>
+      </div>
+      <div class="grid-2 display-grid">
+        <div class="card display-qr-card">
           <div class="qr-box"><div id="qr-code"></div></div>
-          <p class="muted" style="text-align:center;">請掃描 QR Code<br>填寫真實姓名與手機號碼</p>
-          <p id="deadline-text" class="muted" style="text-align:center;"></p>
-          <p id="qr-countdown" class="muted hidden" style="text-align:center;"></p>
+          <p class="muted display-qr-hint">請掃描 QR Code<br>填寫真實姓名與手機號碼</p>
+          <p id="qr-countdown" class="muted display-qr-hint hidden"></p>
         </div>
-        <div class="card">
+        <div class="card display-info-card">
           <h3>現場說明</h3>
           <p id="display-subtitle" class="muted">候補資格以 Server 成功發出唯一候補序號為準。</p>
-          <p id="waitlist-count-row">
-            目前候補人數：<strong id="waitlist-count">0</strong>
-          </p>
+          <div id="display-image-wrap" class="display-image-wrap hidden">
+            <img id="display-image" class="display-image" alt="現場說明圖">
+          </div>
+          <div id="display-stats" class="display-stats hidden">
+            <div id="waitlist-count-row" class="display-stat hidden">
+              <span class="display-stat-label">目前候補人數</span>
+              <span class="display-stat-value" id="waitlist-count">0</span>
+            </div>
+            <div id="deadline-row" class="display-stat hidden">
+              <span class="display-stat-label">候補截止時間</span>
+              <span class="display-stat-value" id="deadline-display"></span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -66,6 +77,8 @@
     let lotteryRuntime = null;
     let connectionFailCount = 0;
     let connectionVisible = false;
+    let loadedDisplayImageFileId = '';
+    let displayImageRequest = null;
 
     function post(action, body) {
       return new Promise(function (resolve, reject) {
@@ -136,7 +149,7 @@
       const img = document.createElement('img');
       img.alt = 'QR Code';
       img.src =
-        'https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=' +
+        'https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=' +
         encodeURIComponent(url);
 
       img.onload = function () {
@@ -168,12 +181,103 @@
       return custom || DEFAULT_SUBTITLE;
     }
 
-    function renderDeadline(text, deadline, show) {
-      if (!show || !deadline) {
-        text.textContent = '';
+    function renderDeadlineElement(el, deadline, show) {
+      if (!el) return;
+      const row = el.closest('#deadline-row') || el;
+      const visible = !!(show && deadline);
+      if (row.id === 'deadline-row') {
+        row.classList.toggle('hidden', !visible);
+        if (visible) {
+          el.textContent = deadline;
+        }
         return;
       }
-      text.textContent = '候補登記截止時間：' + deadline;
+      el.textContent = visible ? ('候補登記截止時間：' + deadline) : '';
+    }
+
+    function syncInfoCardLayout(state) {
+      const card = document.querySelector('.display-info-card');
+      if (!card) return;
+
+      const hasImage = !!(state.show_display_image && state.display_image_file_id);
+      const hasStats = !!(
+        state.show_waitlist_count ||
+        (state.show_deadline && state.deadline)
+      );
+
+      card.classList.toggle('display-info-card-no-image', !hasImage);
+      card.classList.toggle('display-info-card-no-stats', !hasStats);
+    }
+
+    async function renderDisplayImage(state) {
+      const wrap = document.getElementById('display-image-wrap');
+      const img = document.getElementById('display-image');
+      if (!wrap || !img) return;
+
+      const fileId = state.display_image_file_id || '';
+      const showImage = !!(state.show_display_image && fileId);
+
+      wrap.classList.toggle('hidden', !showImage);
+      syncInfoCardLayout(state);
+      if (!showImage) {
+        loadedDisplayImageFileId = '';
+        img.removeAttribute('src');
+        return;
+      }
+
+      if (loadedDisplayImageFileId === fileId && img.getAttribute('src')) {
+        return;
+      }
+
+      if (displayImageRequest) {
+        return displayImageRequest;
+      }
+
+      displayImageRequest = post('getPublicDisplayImage')
+        .then(function (res) {
+          if (res.ok && res.data.has_image && res.data.data_url) {
+            img.src = res.data.data_url;
+            loadedDisplayImageFileId = res.data.file_id || fileId;
+          }
+        })
+        .catch(function (e) {
+          console.warn('display image load failed', e);
+        })
+        .finally(function () {
+          displayImageRequest = null;
+        });
+
+      return displayImageRequest;
+    }
+
+    function renderDisplayStats(state) {
+      const statsEl = document.getElementById('display-stats');
+      const waitlistRow = document.getElementById('waitlist-count-row');
+      const waitlistCountEl = document.getElementById('waitlist-count');
+      const deadlineRow = document.getElementById('deadline-row');
+      const deadlineDisplayEl = document.getElementById('deadline-display');
+
+      const showWaitlist = !!state.show_waitlist_count;
+      const showDeadline = !!(state.show_deadline && state.deadline);
+
+      if (waitlistRow) {
+        waitlistRow.classList.toggle('hidden', !showWaitlist);
+      }
+      if (waitlistCountEl) {
+        waitlistCountEl.textContent = state.waitlist_count || 0;
+      }
+
+      renderDeadlineElement(deadlineDisplayEl, state.deadline, state.show_deadline);
+
+      if (statsEl) {
+        statsEl.classList.toggle('hidden', !showWaitlist && !showDeadline);
+        statsEl.classList.toggle(
+          'display-stats-single',
+          (showWaitlist && !showDeadline) || (!showWaitlist && showDeadline)
+        );
+      }
+
+      syncInfoCardLayout(state);
     }
 
     function stopQrCountdown() {
@@ -234,7 +338,9 @@
         qr.expires_at || 0,
         qr.interval || 0,
         !!qr.rotation_enabled,
-        !!state.show_qr_countdown
+        !!state.show_qr_countdown,
+        !!state.show_display_image,
+        state.display_image_file_id || ''
       ].join('\0');
     }
 
@@ -318,22 +424,11 @@
       document.getElementById('event-title').textContent = formatEventTitle(state);
       document.querySelector('#screen-open .display-status').textContent =
         formatStatusText(state, '候補登記開放中');
-      document.getElementById('waitlist-count').textContent =
-        state.waitlist_count || 0;
-
-      document.getElementById('waitlist-count-row').classList.toggle(
-        'hidden',
-        !state.show_waitlist_count
-      );
-
       document.getElementById('display-subtitle').textContent =
         formatSubtitleText(state);
 
-      renderDeadline(
-        document.getElementById('deadline-text'),
-        state.deadline,
-        state.show_deadline
-      );
+      renderDisplayImage(state);
+      renderDisplayStats(state);
 
       if (state.qr_visible && state.qr && state.qr.url) {
         renderQr(state.qr.url);
@@ -356,8 +451,8 @@
 
       document.getElementById('display-subtitle-2').textContent = '';
 
-      renderDeadline(
-        'deadline-text-2',
+      renderDeadlineElement(
+        document.getElementById('deadline-text-2'),
         state.deadline,
         state.show_deadline
       );
