@@ -334,7 +334,8 @@ function getAdminRegistrationStatus_() {
     display_mode: hasActiveEvent ? (settings.display_mode || 'CLOSED') : 'CLOSED',
     waitlist_count: counts.active,
     waitlist_excluded_count: counts.excluded,
-    waitlist_public_count: counts.active + counts.excluded
+    waitlist_public_count: counts.active + counts.excluded,
+    waitlist_cap: Number(settings.waitlist_cap) || 0
   });
 }
 

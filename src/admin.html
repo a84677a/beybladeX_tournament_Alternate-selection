@@ -116,6 +116,16 @@
           <button class="btn btn-secondary" data-quick="PROCESSING">停止新增</button>
           <button class="btn btn-danger" data-quick="CLOSED">結束候補</button>
         </div>
+        <div class="grid-2 system-grid" style="margin-top:16px;">
+          <div class="field field-narrow">
+            <label for="set-waitlist-cap">候補登記上限</label>
+            <input id="set-waitlist-cap" type="number" min="0" step="1" placeholder="0 = 不限制">
+            <p class="field-hint muted" id="set-waitlist-cap-hint">留空或 0 表示不限制人數。</p>
+          </div>
+          <div class="field" style="align-self:end;">
+            <button class="btn btn-secondary" id="btn-save-waitlist-cap">儲存上限</button>
+          </div>
+        </div>
       </section>
 
       <section id="published-lottery-section" class="admin-section hidden">
@@ -746,6 +756,24 @@
 
     document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
 
+    function updateWaitlistCapHint(settings) {
+      const hintEl = document.getElementById('set-waitlist-cap-hint');
+      if (!hintEl || !settings) return;
+
+      const cap = Number(settings.waitlist_cap);
+      const count = dashboard?.waitlist_public_count ?? dashboard?.waitlist_count ?? 0;
+
+      if (cap > 0) {
+        const remaining = Math.max(cap - count, 0);
+        hintEl.textContent =
+          '目前 ' + count + ' / ' + cap + ' 人' +
+          (remaining === 0 ? '（已額滿，新登記將看到「候補名額已滿」）' : '（尚可登記 ' + remaining + ' 人）');
+        return;
+      }
+
+      hintEl.textContent = '留空或 0 表示不限制人數。';
+    }
+
     function deriveQuickState(state) {
       if (state.display_mode === 'OPEN' || state.display_mode === 'PROCESSING' || state.display_mode === 'CLOSED') {
         return state.display_mode;
@@ -769,7 +797,15 @@
       qrEl.className = 'status-chip-value ' + (qrVisible ? 'is-on' : 'is-muted');
 
       if (state.waitlist_count != null) {
-        document.getElementById('reg-count').textContent = state.waitlist_count;
+        const cap = Number(state.waitlist_cap || dashboard?.settings?.waitlist_cap || 0);
+        const publicCount = state.waitlist_public_count != null
+          ? state.waitlist_public_count
+          : (state.waitlist_count + (state.waitlist_excluded_count || 0));
+        const countEl = document.getElementById('reg-count');
+        countEl.textContent = cap > 0
+          ? publicCount + ' / ' + cap
+          : String(state.waitlist_count);
+        countEl.classList.toggle('is-cap-full', cap > 0 && publicCount >= cap);
       }
 
       const quickState = deriveQuickState(state);
@@ -782,11 +818,21 @@
       if (!state) return;
       updateRegistrationStatusDisplay(state);
       if (dashboard && dashboard.settings) {
+        updateWaitlistCapHint(dashboard.settings);
         dashboard.settings.registration_enabled = !!state.registration_enabled;
         dashboard.settings.qr_visible = !!state.qr_visible;
         dashboard.settings.display_mode = state.display_mode || dashboard.settings.display_mode;
         if (state.waitlist_count != null) {
           dashboard.waitlist_count = state.waitlist_count;
+        }
+        if (state.waitlist_excluded_count != null) {
+          dashboard.waitlist_excluded_count = state.waitlist_excluded_count;
+        }
+        if (state.waitlist_public_count != null) {
+          dashboard.waitlist_public_count = state.waitlist_public_count;
+        }
+        if (state.waitlist_cap != null) {
+          dashboard.settings.waitlist_cap = state.waitlist_cap;
         }
       }
     }
@@ -1383,7 +1429,10 @@
         registration_enabled: s.registration_enabled,
         qr_visible: s.qr_visible,
         display_mode: s.display_mode,
-        waitlist_count: dashboard.waitlist_count
+        waitlist_count: dashboard.waitlist_count,
+        waitlist_excluded_count: dashboard.waitlist_excluded_count,
+        waitlist_public_count: dashboard.waitlist_public_count,
+        waitlist_cap: s.waitlist_cap
       });
 
       if (statusOnly) {
@@ -1421,6 +1470,11 @@
 
       document.getElementById('set-display-subtitle').value =
         s.display_subtitle || '';
+
+      const waitlistCap = Number(s.waitlist_cap);
+      document.getElementById('set-waitlist-cap').value =
+        waitlistCap > 0 ? waitlistCap : '';
+      updateWaitlistCapHint(s);
 
       document.getElementById('set-mode').value = s.mode || 'general';
       document.getElementById('set-qr-rotation').checked = !!s.qr_rotation;
@@ -1659,6 +1713,30 @@
     });
 
 
+
+    document.getElementById('btn-save-waitlist-cap').addEventListener('click', () => {
+      const btn = document.getElementById('btn-save-waitlist-cap');
+      if (btn.disabled) return;
+
+      const raw = document.getElementById('set-waitlist-cap').value.trim();
+      const cap = raw === '' ? 0 : Number(raw);
+      if (raw !== '' && (!Number.isFinite(cap) || cap < 0 || !Number.isInteger(cap))) {
+        UI.showToast('請輸入 0 或正整數', 'error');
+        return;
+      }
+
+      UI.runWithLoading(btn, '儲存中…', async () => {
+        const res = await post('admin.updateSettings', {
+          settings: { waitlist_cap: cap > 0 ? cap : '' }
+        });
+        if (!res.ok) {
+          UI.showToast(res.error?.message || '儲存失敗', 'error');
+          return;
+        }
+        applyMutationDashboard(res, { silent: true });
+        UI.showToast(cap > 0 ? '已設定候補上限 ' + cap + ' 人' : '已取消候補上限', 'success');
+      });
+    });
 
     document.getElementById('btn-save-system').addEventListener('click', () => {
       const btn = document.getElementById('btn-save-system');

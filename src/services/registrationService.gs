@@ -67,7 +67,7 @@ function processRegistration_(payload, options) {
 
   var cap = Number(settings.waitlist_cap);
   if (cap > 0 && countActiveWaitlist_() >= cap) {
-    return error_('CAPACITY_FULL', '候補名額已滿');
+    return error_('CAPACITY_FULL', '候補名額已滿，本場不再接受新的候補登記。');
   }
 
   try {
@@ -93,7 +93,7 @@ function processRegistration_(payload, options) {
       return error_('REGISTRATION_CLOSED', '本場候補登記已結束；尚未取得候補序號者無法完成登記。');
     }
     if (e.message === 'CAPACITY_FULL') {
-      return error_('CAPACITY_FULL', '候補名額已滿');
+      return error_('CAPACITY_FULL', '候補名額已滿，本場不再接受新的候補登記。');
     }
     throw e;
   }

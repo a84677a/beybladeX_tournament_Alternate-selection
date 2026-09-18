@@ -539,6 +539,12 @@
 
       const code = res.error?.code;
       const msg = res.error?.message || '登記失敗';
+
+      if (code === 'CAPACITY_FULL') {
+        showError('候補名額已滿', msg);
+        return;
+      }
+
       if (mode === 'counter') {
         if (code === 'PIN_SESSION_EXHAUSTED') {
           showError('PIN 嘗試次數已用盡', msg || '請重新掃描現場 QR Code 後再登記。');
