@@ -116,16 +116,6 @@
           <button class="btn btn-secondary" data-quick="PROCESSING">停止新增</button>
           <button class="btn btn-danger" data-quick="CLOSED">結束候補</button>
         </div>
-        <div class="grid-2 system-grid" style="margin-top:16px;">
-          <div class="field field-narrow">
-            <label for="set-waitlist-cap">候補登記上限</label>
-            <input id="set-waitlist-cap" type="number" min="0" step="1" placeholder="0 = 不限制">
-            <p class="field-hint muted" id="set-waitlist-cap-hint">留空或 0 表示不限制人數。</p>
-          </div>
-          <div class="field" style="align-self:end;">
-            <button class="btn btn-secondary" id="btn-save-waitlist-cap">儲存上限</button>
-          </div>
-        </div>
       </section>
 
       <section id="published-lottery-section" class="admin-section hidden">
@@ -367,6 +357,15 @@
         <details class="lottery-details">
           <summary>進階設定</summary>
           <div class="lottery-details-body">
+            <h4 class="admin-subsection-title">候補上限</h4>
+            <div class="grid-2 system-grid">
+              <div class="field field-narrow">
+                <label for="set-waitlist-cap">候補登記上限</label>
+                <input id="set-waitlist-cap" type="number" min="0" step="1" placeholder="0 = 不限制">
+                <p class="field-hint muted" id="set-waitlist-cap-hint">留空或 0 表示不限制人數。</p>
+              </div>
+            </div>
+
             <h4 class="admin-subsection-title">QR 設定</h4>
             <div class="grid-2 system-grid">
               <div class="field field-switch">
@@ -755,6 +754,16 @@
     }
 
     document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+
+    function parseWaitlistCapInput(raw) {
+      const value = String(raw || '').trim();
+      if (value === '') return { ok: true, cap: 0 };
+      const cap = Number(value);
+      if (!Number.isFinite(cap) || cap < 0 || !Number.isInteger(cap)) {
+        return { ok: false, message: '候補上限請輸入 0 或正整數' };
+      }
+      return { ok: true, cap: cap };
+    }
 
     function updateWaitlistCapHint(settings) {
       const hintEl = document.getElementById('set-waitlist-cap-hint');
@@ -1714,36 +1723,22 @@
 
 
 
-    document.getElementById('btn-save-waitlist-cap').addEventListener('click', () => {
-      const btn = document.getElementById('btn-save-waitlist-cap');
+    document.getElementById('btn-save-system').addEventListener('click', () => {
+      const btn = document.getElementById('btn-save-system');
       if (btn.disabled) return;
 
-      const raw = document.getElementById('set-waitlist-cap').value.trim();
-      const cap = raw === '' ? 0 : Number(raw);
-      if (raw !== '' && (!Number.isFinite(cap) || cap < 0 || !Number.isInteger(cap))) {
-        UI.showToast('請輸入 0 或正整數', 'error');
+      const capResult = parseWaitlistCapInput(
+        document.getElementById('set-waitlist-cap').value
+      );
+      if (!capResult.ok) {
+        UI.showToast(capResult.message, 'error');
         return;
       }
 
       UI.runWithLoading(btn, '儲存中…', async () => {
-        const res = await post('admin.updateSettings', {
-          settings: { waitlist_cap: cap > 0 ? cap : '' }
-        });
-        if (!res.ok) {
-          UI.showToast(res.error?.message || '儲存失敗', 'error');
-          return;
-        }
-        applyMutationDashboard(res, { silent: true });
-        UI.showToast(cap > 0 ? '已設定候補上限 ' + cap + ' 人' : '已取消候補上限', 'success');
-      });
-    });
-
-    document.getElementById('btn-save-system').addEventListener('click', () => {
-      const btn = document.getElementById('btn-save-system');
-      if (btn.disabled) return;
-      UI.runWithLoading(btn, '儲存中…', async () => {
         const settings = {
           mode: document.getElementById('set-mode').value,
+          waitlist_cap: capResult.cap > 0 ? capResult.cap : '',
           qr_rotation: document.getElementById('set-qr-rotation').checked,
           show_qr_countdown:
             document.getElementById('set-show-qr-countdown').checked,
