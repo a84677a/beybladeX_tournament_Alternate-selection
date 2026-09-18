@@ -99,7 +99,7 @@ function createEvent_(payload) {
       session_name: sessionName
     });
 
-    return attachAdminDashboard_({
+    return attachAdminFullDashboard_({
       settings: getAllSettings_(),
       has_active_event: true
     });
@@ -135,7 +135,7 @@ function archiveEvent_() {
     reset.event_status = 'NONE';
     setSettings_(reset);
 
-    return attachAdminDashboard_({
+    return attachAdminFullDashboard_({
       export_url: exportInfo.url,
       download_url: exportInfo.download_xlsx_url,
       export_name: exportInfo.name

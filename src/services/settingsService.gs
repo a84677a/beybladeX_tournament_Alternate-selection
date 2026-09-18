@@ -327,14 +327,20 @@ function buildAdminPublishedLottery_(settings) {
   );
 }
 
-function getAdminRegistrationStatus_() {
-  requireAdmin_();
+function enrichSettingsForAdmin_(settings) {
+  settings = settings || {};
+  settings.display_image_url = settings.display_image_file_id
+    ? getDisplayImageUrl_(settings.display_image_file_id)
+    : '';
+  return settings;
+}
 
-  var settings = applyAutoCloseDeadline_(getAllSettings_());
+function getAdminRegistrationStatusFields_(settings, counts) {
+  settings = settings || applyAutoCloseDeadline_(getAllSettings_());
+  counts = counts || getWaitlistStatusCounts_();
   var hasActiveEvent = settings.event_status === 'ACTIVE';
-  var counts = getWaitlistStatusCounts_();
 
-  return success_({
+  return {
     has_active_event: hasActiveEvent,
     registration_enabled: hasActiveEvent && !!settings.registration_enabled,
     qr_visible: hasActiveEvent && !!settings.qr_visible,
@@ -343,7 +349,122 @@ function getAdminRegistrationStatus_() {
     waitlist_excluded_count: counts.excluded,
     waitlist_public_count: counts.active + counts.excluded,
     waitlist_cap: Number(settings.waitlist_cap) || 0
+  };
+}
+
+function getAdminRegistrationStatus_() {
+  requireAdmin_();
+  return success_(getAdminRegistrationStatusFields_());
+}
+
+function buildWaitlistRowMutationContext_(settings, lotteryResults) {
+  lotteryResults = lotteryResults || [];
+  var publishedNos = {};
+  var lotteryNos = {};
+  var lotteryId = settings.lottery_id;
+
+  if (lotteryId) {
+    lotteryResults.forEach(function (row) {
+      if (row.lottery_id !== lotteryId) return;
+      var waitlistNo = Number(row.waitlist_no);
+      lotteryNos[waitlistNo] = true;
+      if (isPublishedFlag_(row.is_published)) {
+        publishedNos[waitlistNo] = true;
+      }
+    });
+  }
+
+  return {
+    publishedNos: publishedNos,
+    lotteryNos: lotteryNos,
+    lotteryLocked: !!settings.lottery_locked
+  };
+}
+
+function buildWaitlistActionMeta_(settings, lotteryResults) {
+  var context = buildWaitlistRowMutationContext_(settings, lotteryResults);
+  return {
+    lottery_locked: context.lotteryLocked,
+    published_nos: Object.keys(context.publishedNos).map(Number),
+    lottery_nos: Object.keys(context.lotteryNos).map(Number)
+  };
+}
+
+function buildSingleWaitlistAdminRow_(waitlistNo, settings, lotteryResults) {
+  var found = findWaitlistSheetRow_(waitlistNo);
+  if (!found) return null;
+  var context = buildWaitlistRowMutationContext_(settings, lotteryResults);
+  return toAdminWaitlistRow_(found.row, context);
+}
+
+function isWaitlistNoPublished_(waitlistNo, settings) {
+  if (!settings || !settings.lottery_id) return false;
+  return getLotteryResults_().some(function (row) {
+    return row.lottery_id === settings.lottery_id &&
+      Number(row.waitlist_no) === Number(waitlistNo) &&
+      isPublishedFlag_(row.is_published);
   });
+}
+
+function attachAdminWaitlistRowMutation_(payload, waitlistNo) {
+  payload = payload || {};
+  var settings = enrichSettingsForAdmin_(applyAutoCloseDeadline_(getAllSettings_()));
+  var counts = getWaitlistStatusCounts_();
+  var lotteryResults = settings.lottery_id || settings.lottery_locked
+    ? getLotteryResults_()
+    : [];
+
+  payload.dashboard_patch = {
+    type: 'waitlist_row',
+    waitlist_no_raw: Number(waitlistNo),
+    waitlist_row: buildSingleWaitlistAdminRow_(waitlistNo, settings, lotteryResults),
+    registration_status: getAdminRegistrationStatusFields_(settings, counts)
+  };
+  return success_(payload);
+}
+
+function attachAdminSettingsMutation_(payload, settings) {
+  payload = payload || {};
+  settings = enrichSettingsForAdmin_(settings || getAllSettings_());
+  payload.dashboard_patch = {
+    type: 'settings',
+    settings: settings,
+    registration_status: getAdminRegistrationStatusFields_(settings)
+  };
+  return success_(payload);
+}
+
+function attachAdminLotteryMutation_(payload) {
+  payload = payload || {};
+  var settings = enrichSettingsForAdmin_(applyAutoCloseDeadline_(getAllSettings_()));
+  var counts = getWaitlistStatusCounts_();
+  var waitlistRows = getAllWaitlistRows_();
+  var lotteryResults = settings.lottery_id || settings.lottery_locked
+    ? getLotteryResults_()
+    : [];
+  var allBatches = getPublishBatches_();
+  var publishedLottery = buildAdminPublishedLotteryFromData_(
+    settings,
+    waitlistRows,
+    lotteryResults,
+    allBatches
+  );
+
+  payload.dashboard_patch = {
+    type: 'lottery',
+    settings: settings,
+    publish_batches: allBatches,
+    published_lottery: publishedLottery,
+    waitlist_action_meta: buildWaitlistActionMeta_(settings, lotteryResults),
+    registration_status: getAdminRegistrationStatusFields_(settings, counts)
+  };
+  return success_(payload);
+}
+
+function attachAdminFullDashboard_(payload) {
+  payload = payload || {};
+  payload.dashboard = buildAdminDashboardData_();
+  return success_(payload);
 }
 
 function toAdminWaitlistRow_(row, context) {
@@ -405,9 +526,7 @@ function buildAdminDashboardData_() {
     return toAdminWaitlistRow_(row, waitlistContext);
   });
 
-  settings.display_image_url = settings.display_image_file_id
-    ? getDisplayImageUrl_(settings.display_image_file_id)
-    : '';
+  settings = enrichSettingsForAdmin_(settings);
 
   return {
     settings: settings,
@@ -430,10 +549,9 @@ function buildAdminDashboardData_() {
   };
 }
 
+/** @deprecated 請改用 attachAdmin*Mutation_ 或 attachAdminFullDashboard_ */
 function attachAdminDashboard_(payload) {
-  payload = payload || {};
-  payload.dashboard = buildAdminDashboardData_();
-  return success_(payload);
+  return attachAdminFullDashboard_(payload || {});
 }
 
 function getAdminDashboard_() {
@@ -459,7 +577,7 @@ function setQuickState_(state) {
   requireAdmin_();
   var updates = applyQuickState_(state);
   appendAuditLog_('QUICK_STATE', { state: state, updates: updates });
-  return success_(getAllSettings_());
+  return attachAdminSettingsMutation_({}, getAllSettings_());
 }
 
 function updateSettings_(updates) {
@@ -480,5 +598,5 @@ function updateSettings_(updates) {
 
   setSettings_(updates);
   appendAuditLog_('UPDATE_SETTINGS', updates);
-  return attachAdminDashboard_({ settings: getAllSettings_() });
+  return attachAdminSettingsMutation_({}, getAllSettings_());
 }

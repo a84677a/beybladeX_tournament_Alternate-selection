@@ -206,7 +206,7 @@ function uploadDisplayImage_(payload) {
     }
 
     appendAuditLog_('UPLOAD_DISPLAY_IMAGE', { file_id: file.getId() });
-    return attachAdminDashboard_({ settings: getAllSettings_() });
+    return attachAdminSettingsMutation_({}, getAllSettings_());
   } catch (err) {
     Logger.log('upload display image failed: ' + (err.stack || err.message || err));
     if (isDriveAuthError_(err)) {
@@ -236,7 +236,7 @@ function removeDisplayImage_() {
   });
 
   appendAuditLog_('REMOVE_DISPLAY_IMAGE', { file_id: fileId || null });
-  return attachAdminDashboard_({ settings: getAllSettings_() });
+  return attachAdminSettingsMutation_({}, getAllSettings_());
 }
 
 function readDisplayImageBlob_(fileId) {

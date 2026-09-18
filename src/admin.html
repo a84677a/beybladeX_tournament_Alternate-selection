@@ -1129,16 +1129,108 @@
       }
     }
 
-    function applyMutationDashboard(res, options) {
-      if (res && res.ok && res.data && res.data.dashboard) {
+    function applyRegistrationStatusPatch(registrationStatus) {
+      if (!registrationStatus) return;
+      applyRegistrationStatus(registrationStatus);
+      dashboard.waitlist_count = registrationStatus.waitlist_count;
+      dashboard.waitlist_excluded_count = registrationStatus.waitlist_excluded_count;
+      dashboard.waitlist_public_count = registrationStatus.waitlist_public_count;
+    }
+
+    function applyWaitlistActionMeta(meta) {
+      if (!meta || !dashboard || !dashboard.waitlist) return;
+      const publishedSet = new Set((meta.published_nos || []).map(Number));
+      const lotterySet = new Set((meta.lottery_nos || []).map(Number));
+      dashboard.waitlist.forEach(function (row) {
+        const no = Number(row.waitlist_no_raw);
+        row.can_remove = !row.is_excluded &&
+          !publishedSet.has(no) &&
+          (!meta.lottery_locked || !lotterySet.has(no));
+        row.can_restore = !!row.is_excluded && !meta.lottery_locked;
+      });
+    }
+
+    function applySettingsPatch(settings) {
+      dashboard.settings = Object.assign({}, dashboard.settings, settings);
+      const label = [dashboard.settings.event_name, dashboard.settings.session_name]
+        .filter(Boolean).join('｜');
+      document.getElementById('current-event-label').textContent = label || '-';
+      updateWaitlistCapHint(dashboard.settings);
+      syncDisplayImagePreview(dashboard.settings);
+    }
+
+    function applyDashboardPatch(patch) {
+      if (!patch || !dashboard) return false;
+
+      if (patch.registration_status) {
+        applyRegistrationStatusPatch(patch.registration_status);
+        syncPollSnapshotFromDashboard();
+      }
+
+      switch (patch.type) {
+        case 'waitlist_row':
+          if (patch.waitlist_row && dashboard.waitlist) {
+            const idx = dashboard.waitlist.findIndex(function (row) {
+              return Number(row.waitlist_no_raw) === Number(patch.waitlist_no_raw);
+            });
+            if (idx >= 0) {
+              dashboard.waitlist[idx] = patch.waitlist_row;
+            }
+          }
+          renderWaitlistTable(
+            dashboard.waitlist,
+            buildPublishedLookup(dashboard.published_lottery)
+          );
+          return true;
+
+        case 'settings':
+          applySettingsPatch(patch.settings);
+          updateRegistrationStatusDisplay({
+            registration_enabled: dashboard.settings.registration_enabled,
+            qr_visible: dashboard.settings.qr_visible,
+            display_mode: dashboard.settings.display_mode,
+            waitlist_count: dashboard.waitlist_count,
+            waitlist_excluded_count: dashboard.waitlist_excluded_count,
+            waitlist_public_count: dashboard.waitlist_public_count,
+            waitlist_cap: dashboard.settings.waitlist_cap
+          });
+          return true;
+
+        case 'lottery':
+          applySettingsPatch(patch.settings);
+          dashboard.publish_batches = patch.publish_batches || [];
+          dashboard.published_lottery = patch.published_lottery || { batches: [], entries: [] };
+          applyWaitlistActionMeta(patch.waitlist_action_meta);
+          syncPollSnapshotFromDashboard();
+          renderDashboard({ silent: true });
+          return true;
+
+        default:
+          return false;
+      }
+    }
+
+    function applyMutationResult(res, options) {
+      if (!res || !res.ok || !res.data) return false;
+
+      if (res.data.dashboard_patch && applyDashboardPatch(res.data.dashboard_patch)) {
+        return true;
+      }
+
+      if (res.data.dashboard) {
         applyDashboardData(res.data.dashboard, options || { silent: true });
         return true;
       }
+
       return false;
     }
 
+    function applyMutationDashboard(res, options) {
+      return applyMutationResult(res, options);
+    }
+
     async function refreshAfterMutation(res, options) {
-      if (applyMutationDashboard(res, options)) return;
+      if (applyMutationResult(res, options)) return;
       await loadDashboard({ silent: !(options && options.full) });
     }
 
@@ -1786,11 +1878,7 @@
               UI.showToast(res.error?.message || '切換失敗', 'error');
               return;
             }
-            if (dashboard && res.data) {
-              Object.assign(dashboard.settings, res.data);
-            }
-            applyRegistrationStatus(res.data);
-            syncPollSnapshotFromDashboard();
+            applyMutationDashboard(res, { silent: true });
             UI.showToast('已切換為「' + actionLabel + '」', 'success');
           } catch (err) {
             UI.showToast((err && err.message) || '無法連線伺服器，請稍後再試', 'error');
@@ -1816,7 +1904,7 @@
       if (!confirm('再次確認：確定作廢抽選？\n原因：' + reason.trim())) return;
       UI.runWithOverlay('作廢中…', async () => {
         const res = await post('admin.voidLottery', { reason: reason.trim() });
-        await refreshAfterMutation(res, { full: true });
+        applyMutationResult(res, { silent: true });
         UI.showToast(
           res.ok ? (res.data?.message || '抽選已作廢') : (res.error?.message || '作廢失敗'),
           res.ok ? 'success' : 'error'
@@ -1843,7 +1931,7 @@
           document.getElementById('lottery-exclude').value = '';
           document.getElementById('lottery-include').value = '';
         }
-        await refreshAfterMutation(res, { full: true });
+        applyMutationResult(res, { silent: true });
         UI.showToast(res.ok ? '抽選完成' : (res.error?.message || '失敗'), res.ok ? 'success' : 'error');
       });
     });
@@ -1858,7 +1946,7 @@
         if (displayTitle) payload.display_title = displayTitle;
         const res = await post('admin.createPublishBatch', payload);
         if (res.ok) document.getElementById('next-batch-title').value = '';
-        await refreshAfterMutation(res, { full: true });
+        applyMutationResult(res, { silent: true });
         UI.showToast(res.ok ? '已建立下一批' : (res.error?.message || '失敗'), res.ok ? 'success' : 'error');
       });
     });

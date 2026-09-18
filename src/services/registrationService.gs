@@ -70,6 +70,12 @@ function processRegistration_(payload, options) {
     return error_('CAPACITY_FULL', '候補名額已滿，本場不再接受新的候補登記。');
   }
 
+  var deadlineMs = 0;
+  if (settings.auto_close_deadline) {
+    var deadlineDate = getDeadlineDate_(settings);
+    if (deadlineDate) deadlineMs = deadlineDate.getTime();
+  }
+
   try {
     var row = withScriptLock_(function () {
       return finalizeRegistrationInLock_({
@@ -78,7 +84,10 @@ function processRegistration_(payload, options) {
         normalizedName: normalizedName,
         normalizedPhone: normalizedPhone,
         cap: cap,
-        duplicateFlags: precheck.duplicateFlags
+        duplicateFlags: precheck.duplicateFlags,
+        eventId: settings.event_id,
+        autoCloseDeadline: !!settings.auto_close_deadline,
+        deadlineMs: deadlineMs
       });
     });
 
@@ -100,42 +109,34 @@ function processRegistration_(payload, options) {
 }
 
 function finalizeRegistrationInLock_(input) {
-  var latestSettings = getAllSettings_();
+  invalidateWaitlistIndex_();
 
-  // 最終發號前再次確認是否已超過自動截止時間
-  if (latestSettings.auto_close_deadline) {
-    var deadline = getDeadlineDate_(latestSettings);
+  var byRequestId = findByRequestId_(input.requestId);
+  if (byRequestId) return byRequestId;
 
-    if (deadline && new Date().getTime() >= deadline.getTime()) {
-      throw new Error('REGISTRATION_CLOSED');
-    }
+  var exactDuplicate = findExactDuplicate_(input.normalizedName, input.normalizedPhone);
+  if (exactDuplicate) {
+    return { _duplicate: exactDuplicate };
   }
 
-  if (!latestSettings.registration_enabled) {
+  if (!getSetting_('registration_enabled', false)) {
     throw new Error('REGISTRATION_CLOSED');
   }
 
-  var lockedLookup = lookupWaitlistForRegistration_(
-    input.requestId,
-    input.normalizedName,
-    input.normalizedPhone
-  );
-  if (lockedLookup.byRequestId) return lockedLookup.byRequestId;
-  if (lockedLookup.exactDuplicate) {
-    return { _duplicate: lockedLookup.exactDuplicate };
+  if (input.autoCloseDeadline && input.deadlineMs && Date.now() >= input.deadlineMs) {
+    throw new Error('REGISTRATION_CLOSED');
   }
 
+  invalidateWaitlistCountCache_();
   if (input.cap > 0 && countActiveWaitlist_() >= input.cap) {
     throw new Error('CAPACITY_FULL');
   }
 
-  var waitlistNo = Number(latestSettings.next_waitlist_number) || 1;
-  var duplicateFlags = (lockedLookup.duplicateFlags.length
-    ? lockedLookup.duplicateFlags
-    : input.duplicateFlags).join(',');
+  var waitlistNo = Number(getSetting_('next_waitlist_number', 1));
+  var duplicateFlags = (input.duplicateFlags || []).join(',');
 
   var newRow = {
-    event_id: latestSettings.event_id,
+    event_id: input.eventId,
     waitlist_no: waitlistNo,
     name: String(input.name).trim(),
     phone: input.normalizedPhone,
@@ -291,11 +292,7 @@ function removeWaitlistEntry_(waitlistNo) {
     }
   }
 
-  var published = buildAdminPublishedLottery_(settings);
-  var isPublished = (published.entries || []).some(function (entry) {
-    return Number(entry.waitlist_no_raw) === waitlistNo;
-  });
-  if (isPublished) {
+  if (isWaitlistNoPublished_(waitlistNo, settings)) {
     return error_('ALREADY_PUBLISHED', '此候補已公布，無法剔除');
   }
 
@@ -305,10 +302,10 @@ function removeWaitlistEntry_(waitlistNo) {
     name: found.row.name
   });
 
-  return attachAdminDashboard_({
+  return attachAdminWaitlistRowMutation_({
     waitlist_no: formatWaitlistNo_(waitlistNo),
     message: '已剔除候補 ' + formatWaitlistNo_(waitlistNo) + '（登記者不會收到通知）'
-  });
+  }, waitlistNo);
 }
 
 function restoreWaitlistEntry_(waitlistNo) {
@@ -337,8 +334,8 @@ function restoreWaitlistEntry_(waitlistNo) {
     name: found.row.name
   });
 
-  return attachAdminDashboard_({
+  return attachAdminWaitlistRowMutation_({
     waitlist_no: formatWaitlistNo_(waitlistNo),
     message: '已恢復候補 ' + formatWaitlistNo_(waitlistNo)
-  });
+  }, waitlistNo);
 }

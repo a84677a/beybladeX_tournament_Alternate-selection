@@ -172,7 +172,7 @@ function runInitialLottery_(firstBatchCount, advancedRules) {
     advanced_rules: { exclude: excluded, include: forced }
   });
 
-  return attachAdminDashboard_({
+  return attachAdminLotteryMutation_({
     lottery_id: lotteryId,
     total: shuffled.length,
     first_batch: batchResult.data
@@ -213,7 +213,7 @@ function voidLottery_(reason) {
       reason: reason
     });
 
-    return attachAdminDashboard_({
+    return attachAdminLotteryMutation_({
       voided_lottery_id: voidedLotteryId,
       message: '抽選已作廢，可重新設定進階規則並執行首次抽選'
     });
@@ -287,7 +287,7 @@ function createPublishBatch_(count, lotteryId, batchNo, displayTitle) {
     count: count
   });
 
-  return attachAdminDashboard_({
+  return attachAdminLotteryMutation_({
     batch_id: batchId,
     batch_no: batchNo,
     rank_start: rankStart,
@@ -308,7 +308,7 @@ function setDisplayedBatch_(batchId) {
     active_batch_id: batchId
   });
   appendAuditLog_('SET_DISPLAY_BATCH', { batch_id: batchId });
-  return attachAdminDashboard_({ batch: batch });
+  return attachAdminSettingsMutation_({ batch: batch }, getAllSettings_());
 }
 
 function toChineseOrdinal_(num) {
