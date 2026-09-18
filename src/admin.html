@@ -876,7 +876,7 @@
       });
     }
 
-    async function removeWaitlistEntry(waitlistNo, name) {
+    function removeWaitlistEntry(waitlistNo, name, button) {
       const label = waitlistNo + (name ? '（' + name + '）' : '');
       if (!confirm(
         '確定要剔除候補 ' + label + '？\n\n' +
@@ -884,23 +884,27 @@
         '· 抽選時不會被抽到\n' +
         '· 登記者不會收到任何通知'
       )) return;
-      const res = await post('admin.removeWaitlistEntry', { waitlist_no: waitlistNo });
-      if (!res.ok) {
-        alert(res.error?.message || '剔除失敗');
-        return;
-      }
-      await loadDashboard();
+      UI.runWithLoading(button, '剔除中…', async () => {
+        const res = await post('admin.removeWaitlistEntry', { waitlist_no: waitlistNo });
+        if (!res.ok) {
+          alert(res.error?.message || '剔除失敗');
+          return;
+        }
+        await loadDashboard();
+      });
     }
 
-    async function restoreWaitlistEntry(waitlistNo, name) {
+    function restoreWaitlistEntry(waitlistNo, name, button) {
       const label = waitlistNo + (name ? '（' + name + '）' : '');
       if (!confirm('確定要恢復候補 ' + label + '？\n\n恢復後將重新納入抽選。')) return;
-      const res = await post('admin.restoreWaitlistEntry', { waitlist_no: waitlistNo });
-      if (!res.ok) {
-        alert(res.error?.message || '恢復失敗');
-        return;
-      }
-      await loadDashboard();
+      UI.runWithLoading(button, '恢復中…', async () => {
+        const res = await post('admin.restoreWaitlistEntry', { waitlist_no: waitlistNo });
+        if (!res.ok) {
+          alert(res.error?.message || '恢復失敗');
+          return;
+        }
+        await loadDashboard();
+      });
     }
 
     function renderWaitlistTable(waitlist, publishedLookup) {
@@ -986,7 +990,7 @@
           btn.className = 'btn btn-danger btn-table';
           btn.textContent = '剔除';
           btn.addEventListener('click', function () {
-            removeWaitlistEntry(row.waitlist_no_raw, row.name);
+            removeWaitlistEntry(row.waitlist_no_raw, row.name, btn);
           });
           tdAction.appendChild(btn);
         } else if (row.can_restore) {
@@ -995,7 +999,7 @@
           btn.className = 'btn btn-secondary btn-table';
           btn.textContent = '恢復';
           btn.addEventListener('click', function () {
-            restoreWaitlistEntry(row.waitlist_no_raw, row.name);
+            restoreWaitlistEntry(row.waitlist_no_raw, row.name, btn);
           });
           tdAction.appendChild(btn);
         } else {
