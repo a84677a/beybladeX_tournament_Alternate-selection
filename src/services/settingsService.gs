@@ -254,13 +254,13 @@ function isPublishedFlag_(value) {
   return value === true || String(value).toUpperCase() === 'TRUE';
 }
 
-function buildAdminPublishedLottery_(settings) {
+function buildAdminPublishedLotteryFromData_(settings, waitlistRows, lotteryResults, allBatches) {
   if (!settings || !settings.lottery_id) {
     return { batches: [], entries: [] };
   }
 
   var lotteryId = settings.lottery_id;
-  var batches = getPublishBatches_().filter(function (batch) {
+  var batches = (allBatches || []).filter(function (batch) {
     return batch.lottery_id === lotteryId;
   }).map(function (batch) {
     return {
@@ -274,7 +274,7 @@ function buildAdminPublishedLottery_(settings) {
   });
 
   var waitlistByNo = {};
-  getAllWaitlistRows_().forEach(function (row) {
+  (waitlistRows || []).forEach(function (row) {
     waitlistByNo[Number(row.waitlist_no)] = row;
   });
 
@@ -283,7 +283,7 @@ function buildAdminPublishedLottery_(settings) {
     batchById[batch.batch_id] = batch;
   });
 
-  var entries = getLotteryResults_().filter(function (row) {
+  var entries = (lotteryResults || []).filter(function (row) {
     return row.lottery_id === lotteryId && isPublishedFlag_(row.is_published);
   }).map(function (row) {
     var waitlistNo = Number(row.waitlist_no);
@@ -310,8 +310,32 @@ function buildAdminPublishedLottery_(settings) {
   };
 }
 
-function countLotteryEligibleWaitlist_() {
-  return getAllWaitlistRows_().filter(isWaitlistLotteryEligible_).length;
+function buildAdminPublishedLottery_(settings) {
+  var lotteryResults = settings && settings.lottery_id ? getLotteryResults_() : [];
+  return buildAdminPublishedLotteryFromData_(
+    settings,
+    getAllWaitlistRows_(),
+    lotteryResults,
+    getPublishBatches_()
+  );
+}
+
+function getAdminRegistrationStatus_() {
+  requireAdmin_();
+
+  var settings = applyAutoCloseDeadline_(getAllSettings_());
+  var hasActiveEvent = settings.event_status === 'ACTIVE';
+  var counts = getWaitlistStatusCounts_();
+
+  return success_({
+    has_active_event: hasActiveEvent,
+    registration_enabled: hasActiveEvent && !!settings.registration_enabled,
+    qr_visible: hasActiveEvent && !!settings.qr_visible,
+    display_mode: hasActiveEvent ? (settings.display_mode || 'CLOSED') : 'CLOSED',
+    waitlist_count: counts.active,
+    waitlist_excluded_count: counts.excluded,
+    waitlist_public_count: counts.active + counts.excluded
+  });
 }
 
 function toAdminWaitlistRow_(row, context) {
@@ -325,7 +349,7 @@ function toAdminWaitlistRow_(row, context) {
   return publicRow;
 }
 
-function buildAdminWaitlistContext_(settings, publishedLottery) {
+function buildAdminWaitlistContextFromData_(settings, publishedLottery, lotteryResults) {
   var publishedNos = {};
   (publishedLottery.entries || []).forEach(function (entry) {
     publishedNos[Number(entry.waitlist_no_raw)] = true;
@@ -333,7 +357,7 @@ function buildAdminWaitlistContext_(settings, publishedLottery) {
 
   var lotteryNos = {};
   if (settings.lottery_locked) {
-    getLotteryResults_().forEach(function (row) {
+    (lotteryResults || []).forEach(function (row) {
       lotteryNos[Number(row.waitlist_no)] = true;
     });
   }
@@ -345,19 +369,35 @@ function buildAdminWaitlistContext_(settings, publishedLottery) {
   };
 }
 
-function getAdminDashboard_() {
-  requireAdmin_();
+function buildAdminWaitlistContext_(settings, publishedLottery) {
+  var lotteryResults = settings && settings.lottery_locked ? getLotteryResults_() : [];
+  return buildAdminWaitlistContextFromData_(settings, publishedLottery, lotteryResults);
+}
 
-  var settings =
-    applyAutoCloseDeadline_(getAllSettings_());
-  var batches = getPublishBatches_();
-  var publishedLottery = buildAdminPublishedLottery_(settings);
-  var waitlistContext = buildAdminWaitlistContext_(settings, publishedLottery);
-  var waitlist = getAllWaitlistRows_().map(function (row) {
+function buildAdminDashboardData_() {
+  var settings = applyAutoCloseDeadline_(getAllSettings_());
+  var statusCounts = getWaitlistStatusCounts_();
+  var waitlistRows = getAllWaitlistRows_();
+  var allBatches = getPublishBatches_();
+  var lotteryResults = settings.lottery_id || settings.lottery_locked
+    ? getLotteryResults_()
+    : [];
+  var publishedLottery = buildAdminPublishedLotteryFromData_(
+    settings,
+    waitlistRows,
+    lotteryResults,
+    allBatches
+  );
+  var waitlistContext = buildAdminWaitlistContextFromData_(
+    settings,
+    publishedLottery,
+    lotteryResults
+  );
+  var waitlist = waitlistRows.map(function (row) {
     return toAdminWaitlistRow_(row, waitlistContext);
   });
 
-  return success_({
+  return {
     settings: settings,
     default_staff_pin: CONFIG.DEFAULTS.DEFAULT_STAFF_PIN,
     default_event_name: CONFIG.DEFAULTS.DEFAULT_EVENT_NAME,
@@ -365,16 +405,28 @@ function getAdminDashboard_() {
     has_active_event: settings.event_status === 'ACTIVE',
     event_label: buildEventLabel_(settings),
     waitlist: waitlist,
-    waitlist_count: countLotteryEligibleWaitlist_(),
-    waitlist_public_count: countActiveWaitlist_(),
-    publish_batches: batches,
+    waitlist_count: statusCounts.active,
+    waitlist_excluded_count: statusCounts.excluded,
+    waitlist_public_count: statusCounts.active + statusCounts.excluded,
+    publish_batches: allBatches,
     published_lottery: publishedLottery,
     urls: {
       display: getDisplayUrl_(),
       candidate: getCandidateUrl_(),
       admin: ScriptApp.getService().getUrl() + '?page=admin'
     }
-  });
+  };
+}
+
+function attachAdminDashboard_(payload) {
+  payload = payload || {};
+  payload.dashboard = buildAdminDashboardData_();
+  return success_(payload);
+}
+
+function getAdminDashboard_() {
+  requireAdmin_();
+  return success_(buildAdminDashboardData_());
 }
 
 function setRegistrationState_(enabled) {
@@ -409,5 +461,5 @@ function updateSettings_(updates) {
 
   setSettings_(updates);
   appendAuditLog_('UPDATE_SETTINGS', updates);
-  return success_(getAllSettings_());
+  return attachAdminDashboard_({ settings: getAllSettings_() });
 }

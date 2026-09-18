@@ -50,6 +50,8 @@
     </div>
   </div>
 
+  <div id="connection-status" class="display-connection display-connection-ok hidden" aria-live="polite"></div>
+
   <script>
     const WEB_APP_URL = '<?= webAppUrl ?>';
     const INITIAL_STATE = <?!= initialStateJson ?>;
@@ -62,6 +64,8 @@
     let currentQrUrl = '';
     let lastOpenSnapshot = '';
     let lotteryRuntime = null;
+    let connectionFailCount = 0;
+    let connectionVisible = false;
 
     function post(action, body) {
       return new Promise(function (resolve, reject) {
@@ -90,8 +94,26 @@
 
     var DEFAULT_SUBTITLE = '候補資格以 Server 成功發出唯一候補序號為準。';
 
+    function setConnectionStatus(state) {
+      const el = document.getElementById('connection-status');
+      if (!el) return;
+      connectionVisible = true;
+      el.classList.remove('hidden', 'display-connection-ok', 'display-connection-syncing', 'display-connection-warn');
+      if (state === 'syncing') {
+        el.classList.add('display-connection-syncing');
+        el.textContent = '重新連線中…';
+      } else if (state === 'warn') {
+        el.classList.add('display-connection-warn');
+        el.textContent = '連線不穩，顯示可能不是最新';
+      } else {
+        el.classList.add('display-connection-ok');
+        el.textContent = '已連線';
+      }
+    }
+
     function renderQr(url) {
       const container = document.getElementById('qr-code');
+      const qrBox = container ? container.closest('.qr-box') : null;
 
       if (!container) {
         console.error('QR container not found');
@@ -101,12 +123,15 @@
       if (!url) {
         container.innerHTML = '';
         currentQrUrl = '';
+        if (qrBox) qrBox.classList.remove('is-loading');
         return;
       }
 
       if (url === currentQrUrl) {
         return;
       }
+
+      if (qrBox) qrBox.classList.add('is-loading');
 
       const img = document.createElement('img');
       img.alt = 'QR Code';
@@ -117,11 +142,13 @@
       img.onload = function () {
         container.replaceChildren(img);
         currentQrUrl = url;
+        if (qrBox) qrBox.classList.remove('is-loading');
       };
 
       img.onerror = function () {
         console.error('QR image failed to load');
         currentQrUrl = '';
+        if (qrBox) qrBox.classList.remove('is-loading');
       };
     }
 
@@ -455,15 +482,24 @@
     function scheduleRefresh() {
       clearTimeout(pollTimer);
       pollTimer = setTimeout(async () => {
+        if (connectionVisible && connectionFailCount > 0) {
+          setConnectionStatus('syncing');
+        }
         try {
           const res = await post('getPublicState');
           if (res.ok) {
             renderState(res.data);
             pollIntervalMs = 10000;
+            connectionFailCount = 0;
+            setConnectionStatus('ok');
           }
         } catch (e) {
           console.warn('refresh failed, keep last screen', e);
+          connectionFailCount += 1;
           pollIntervalMs = Math.min(Math.round(pollIntervalMs * 1.5), 30000);
+          if (connectionFailCount >= 2) {
+            setConnectionStatus('warn');
+          }
         }
         scheduleRefresh();
       }, getNextRefreshDelay());
@@ -471,6 +507,7 @@
 
     if (INITIAL_STATE) {
       renderState(INITIAL_STATE);
+      setConnectionStatus('ok');
     }
     scheduleRefresh();
   </script>

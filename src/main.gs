@@ -72,8 +72,12 @@ function dispatchAction_(action, body) {
       return adminLogout_(body.token);
     case 'admin.checkSession':
       return adminCheckSession_(body.token);
+    case 'admin.bootstrap':
+      return adminBootstrap_(body.token);
     case 'admin.getDashboard':
       return getAdminDashboard_();
+    case 'admin.getRegistrationStatus':
+      return getAdminRegistrationStatus_();
     case 'admin.removeWaitlistEntry':
       return removeWaitlistEntry_(body.waitlist_no);
     case 'admin.restoreWaitlistEntry':

@@ -139,16 +139,25 @@
             <tbody id="published-lottery-body"></tbody>
           </table>
         </div>
+        <div id="published-lottery-pagination" class="table-pagination hidden"></div>
       </section>
 
       <section class="admin-section">
         <h3 id="all-waitlist-heading" class="admin-section-title hidden">全部候補登記</h3>
+        <p class="muted hidden" id="waitlist-summary">-</p>
+        <div id="waitlist-toolbar" class="filter-bar hidden">
+          <div class="field">
+            <label for="waitlist-search">搜尋序號或姓名</label>
+            <input id="waitlist-search" type="text" placeholder="例：045 或 王小明">
+          </div>
+        </div>
         <div class="table-wrap">
           <table class="table">
             <thead><tr><th>序號</th><th>姓名</th><th>電話</th><th>時間</th><th>提示</th><th>操作</th></tr></thead>
             <tbody id="waitlist-body"></tbody>
           </table>
         </div>
+        <div id="waitlist-pagination" class="table-pagination hidden"></div>
       </section>
     </div>
 
@@ -445,9 +454,15 @@
     let statusPollTimer = null;
     let publishedBatchFilter = '';
     let publishedSearchQuery = '';
+    let publishedLotteryPage = 1;
     let publishedLotteryControlsBound = false;
+    let waitlistPage = 1;
+    let waitlistSearchQuery = '';
+    let waitlistControlsBound = false;
     let postQueue = Promise.resolve();
+    let statusPollInFlight = false;
     const STATUS_POLL_MS = 10000;
+    const WAITLIST_PAGE_SIZE = 50;
 
     function getAdminToken() {
       return localStorage.getItem(ADMIN_TOKEN_KEY) || '';
@@ -698,13 +713,34 @@
       return result;
     }
 
+    function postBackground(action, body) {
+      const payload = Object.assign({}, body || {});
+      if (action.indexOf('admin.') === 0 && action !== 'admin.login') {
+        payload.token = getAdminToken();
+      }
+      return new Promise(function (resolve, reject) {
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (res && res.error &&
+                (res.error.code === 'SESSION_EXPIRED' || res.error.code === 'FORBIDDEN')) {
+              forceRelogin(res.error.message || 'Session 已失效，請重新登入');
+            }
+            resolve(res);
+          })
+          .withFailureHandler(function (err) {
+            reject(err);
+          })
+          .apiCall(action, payload);
+      });
+    }
+
     function switchTab(tab) {
       document.querySelectorAll('.tab').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
       ['registration', 'lottery', 'display', 'system', 'data'].forEach(name => {
         document.getElementById('panel-' + name).classList.toggle('hidden', name !== tab);
       });
       if (tab === 'registration' && dashboardReady) {
-        refreshRegistrationStatus();
+        refreshRegistrationStatus({ forceReload: true });
       }
     }
 
@@ -749,7 +785,79 @@
         dashboard.settings.registration_enabled = !!state.registration_enabled;
         dashboard.settings.qr_visible = !!state.qr_visible;
         dashboard.settings.display_mode = state.display_mode || dashboard.settings.display_mode;
+        if (state.waitlist_count != null) {
+          dashboard.waitlist_count = state.waitlist_count;
+        }
       }
+    }
+
+    function snapshotRegistrationStatus(data) {
+      return {
+        registration_enabled: !!data.registration_enabled,
+        qr_visible: !!data.qr_visible,
+        display_mode: data.display_mode || 'CLOSED',
+        waitlist_count: data.waitlist_count,
+        waitlist_excluded_count: data.waitlist_excluded_count
+      };
+    }
+
+    function registrationStatusChanged(prev, next) {
+      if (!prev || !next) return true;
+      return prev.registration_enabled !== next.registration_enabled ||
+        prev.qr_visible !== next.qr_visible ||
+        prev.display_mode !== next.display_mode ||
+        prev.waitlist_count !== next.waitlist_count ||
+        prev.waitlist_excluded_count !== next.waitlist_excluded_count;
+    }
+
+    function waitlistDataChanged(prev, next) {
+      if (!prev || !next) return true;
+      return prev.waitlist_count !== next.waitlist_count ||
+        prev.waitlist_excluded_count !== next.waitlist_excluded_count;
+    }
+
+    function countExcludedWaitlist(rows) {
+      return (rows || []).filter(function (row) {
+        return row.is_excluded;
+      }).length;
+    }
+
+    function syncPollSnapshotFromDashboard() {
+      if (!dashboard) return;
+      dashboard._pollSnapshot = snapshotRegistrationStatus({
+        registration_enabled: dashboard.settings.registration_enabled,
+        qr_visible: dashboard.settings.qr_visible,
+        display_mode: dashboard.settings.display_mode,
+        waitlist_count: dashboard.waitlist_count,
+        waitlist_excluded_count: dashboard.waitlist_excluded_count != null
+          ? dashboard.waitlist_excluded_count
+          : countExcludedWaitlist(dashboard.waitlist)
+      });
+    }
+
+    function applyDashboardData(data, options) {
+      options = options || {};
+      dashboard = data;
+      dashboardReady = true;
+      syncPollSnapshotFromDashboard();
+      if (options.full) {
+        renderDashboard({});
+      } else {
+        renderDashboard({ silent: !!options.silent });
+      }
+    }
+
+    function applyMutationDashboard(res, options) {
+      if (res && res.ok && res.data && res.data.dashboard) {
+        applyDashboardData(res.data.dashboard, options || { silent: true });
+        return true;
+      }
+      return false;
+    }
+
+    async function refreshAfterMutation(res, options) {
+      if (applyMutationDashboard(res, options)) return;
+      await loadDashboard({ silent: !(options && options.full) });
     }
 
     function buildPublishedLookup(publishedLottery) {
@@ -766,31 +874,83 @@
       return 'Batch ' + entry.batch_no + title;
     }
 
+    function renderTablePagination(containerId, options) {
+      const el = document.getElementById(containerId);
+      if (!el) return;
+      const totalRows = options.totalRows || 0;
+      const page = options.page || 1;
+      const pageSize = options.pageSize || WAITLIST_PAGE_SIZE;
+      const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+      const unitLabel = options.unitLabel || '人';
+
+      if (totalRows <= pageSize) {
+        el.classList.add('hidden');
+        el.innerHTML = '';
+        return;
+      }
+
+      el.classList.remove('hidden');
+      el.innerHTML = '';
+
+      const rangeStart = (page - 1) * pageSize + 1;
+      const rangeEnd = Math.min(page * pageSize, totalRows);
+      const summary = document.createElement('span');
+      summary.className = 'table-pagination-summary muted';
+      summary.textContent =
+        '顯示 ' + rangeStart + '–' + rangeEnd + ' / 共 ' + totalRows + ' ' + unitLabel +
+        '（第 ' + page + ' / ' + totalPages + ' 頁）';
+
+      const prev = document.createElement('button');
+      prev.type = 'button';
+      prev.className = 'btn btn-secondary btn-table';
+      prev.textContent = '上一頁';
+      prev.disabled = page <= 1;
+      prev.addEventListener('click', function () {
+        if (page <= 1 || !options.onPageChange) return;
+        options.onPageChange(page - 1);
+      });
+
+      const next = document.createElement('button');
+      next.type = 'button';
+      next.className = 'btn btn-secondary btn-table';
+      next.textContent = '下一頁';
+      next.disabled = page >= totalPages;
+      next.addEventListener('click', function () {
+        if (page >= totalPages || !options.onPageChange) return;
+        options.onPageChange(page + 1);
+      });
+
+      el.appendChild(summary);
+      el.appendChild(prev);
+      el.appendChild(next);
+    }
+
     function bindPublishedLotteryControls() {
       if (publishedLotteryControlsBound) return;
       publishedLotteryControlsBound = true;
       document.getElementById('published-batch-filter').addEventListener('change', function () {
         publishedBatchFilter = this.value;
+        publishedLotteryPage = 1;
         renderPublishedLotterySection();
       });
       document.getElementById('published-search').addEventListener('input', function () {
         publishedSearchQuery = this.value.trim().toLowerCase();
+        publishedLotteryPage = 1;
         renderPublishedLotterySection();
       });
     }
 
     function renderPublishedLotterySection() {
       const section = document.getElementById('published-lottery-section');
-      const heading = document.getElementById('all-waitlist-heading');
       const publishedLottery = dashboard && dashboard.published_lottery;
       const entries = (publishedLottery && publishedLottery.entries) || [];
       const hasPublished = entries.length > 0;
 
       section.classList.toggle('hidden', !hasPublished);
-      heading.classList.toggle('hidden', !hasPublished);
 
       if (!hasPublished) {
         document.getElementById('published-lottery-body').innerHTML = '';
+        document.getElementById('published-lottery-pagination').classList.add('hidden');
         return;
       }
 
@@ -836,6 +996,11 @@
         '已公布 ' + entries.length + ' 人' +
         (filtered.length !== entries.length ? '（目前顯示 ' + filtered.length + ' 人）' : '');
 
+      const totalPages = Math.max(1, Math.ceil(filtered.length / WAITLIST_PAGE_SIZE));
+      if (publishedLotteryPage > totalPages) publishedLotteryPage = totalPages;
+      const pageStart = (publishedLotteryPage - 1) * WAITLIST_PAGE_SIZE;
+      const pageEntries = filtered.slice(pageStart, pageStart + WAITLIST_PAGE_SIZE);
+
       const tbody = document.getElementById('published-lottery-body');
       tbody.innerHTML = '';
       if (filtered.length === 0) {
@@ -846,10 +1011,11 @@
         td.textContent = '沒有符合條件的公布名單';
         tr.appendChild(td);
         tbody.appendChild(tr);
+        renderTablePagination('published-lottery-pagination', { totalRows: 0, page: 1 });
         return;
       }
 
-      filtered.forEach(function (entry) {
+      pageEntries.forEach(function (entry) {
         const tr = document.createElement('tr');
 
         const tdRank = document.createElement('td');
@@ -874,6 +1040,146 @@
         tr.appendChild(tdBatch);
         tbody.appendChild(tr);
       });
+
+      renderTablePagination('published-lottery-pagination', {
+        totalRows: filtered.length,
+        page: publishedLotteryPage,
+        onPageChange: function (nextPage) {
+          publishedLotteryPage = nextPage;
+          renderPublishedLotterySection();
+        }
+      });
+    }
+
+    function bindWaitlistControls() {
+      if (waitlistControlsBound) return;
+      waitlistControlsBound = true;
+      document.getElementById('waitlist-search').addEventListener('input', function () {
+        waitlistSearchQuery = this.value.trim().toLowerCase();
+        waitlistPage = 1;
+        if (dashboard && dashboard.waitlist) {
+          renderWaitlistTable(
+            dashboard.waitlist,
+            buildPublishedLookup(dashboard.published_lottery)
+          );
+        }
+      });
+    }
+
+    function getFilteredWaitlistRows(waitlist) {
+      let rows = (waitlist || []).slice();
+      if (waitlistSearchQuery) {
+        rows = rows.filter(function (row) {
+          const noText = String(row.waitlist_no || '').toLowerCase();
+          const rawText = String(row.waitlist_no_raw || '').toLowerCase();
+          const nameText = String(row.name || '').toLowerCase();
+          return noText.indexOf(waitlistSearchQuery) !== -1 ||
+            rawText.indexOf(waitlistSearchQuery) !== -1 ||
+            nameText.indexOf(waitlistSearchQuery) !== -1;
+        });
+      }
+      rows.sort(function (a, b) {
+        return Number(b.waitlist_no_raw || 0) - Number(a.waitlist_no_raw || 0);
+      });
+      return rows;
+    }
+
+    function updateWaitlistSectionChrome(totalRows, filteredRows) {
+      document.getElementById('all-waitlist-heading').classList.toggle('hidden', totalRows === 0);
+      document.getElementById('waitlist-toolbar').classList.toggle('hidden', totalRows === 0);
+      const summaryEl = document.getElementById('waitlist-summary');
+      if (totalRows === 0) {
+        summaryEl.classList.add('hidden');
+        summaryEl.textContent = '';
+        return;
+      }
+      summaryEl.classList.remove('hidden');
+      summaryEl.textContent =
+        '共 ' + totalRows + ' 人' +
+        (filteredRows !== totalRows ? '（目前篩選 ' + filteredRows + ' 人）' : '');
+    }
+
+    function appendWaitlistTableRow(tbody, row, publishedLookup) {
+      const tr = document.createElement('tr');
+      if (row.is_excluded) tr.className = 'waitlist-row-excluded';
+      const published = publishedLookup && publishedLookup[String(row.waitlist_no_raw)];
+
+      const tdNo = document.createElement('td');
+      tdNo.textContent = row.waitlist_no || '';
+
+      const tdName = document.createElement('td');
+      tdName.textContent = row.name || '';
+
+      const tdPhone = document.createElement('td');
+      tdPhone.textContent = row.phone_masked || '';
+
+      const tdTime = document.createElement('td');
+      tdTime.textContent = row.registered_at || '';
+
+      const tdFlags = document.createElement('td');
+
+      if (row.is_excluded) {
+        const badge = document.createElement('span');
+        badge.className = 'badge badge-excluded';
+        badge.textContent = '已剔除';
+        tdFlags.appendChild(badge);
+        tdFlags.appendChild(document.createTextNode(' '));
+      }
+
+      if (published) {
+        const badge = document.createElement('span');
+        badge.className = 'badge badge-published';
+        badge.textContent = '已公布 順位' + published.random_rank;
+        tdFlags.appendChild(badge);
+        tdFlags.appendChild(document.createTextNode(' '));
+      }
+
+      (row.duplicate_flags || '')
+        .split(',')
+        .filter(Boolean)
+        .forEach(function (flag) {
+          const badge = document.createElement('span');
+          badge.className =
+            'badge ' +
+            (flag === 'same_phone' || flag === 'same_name' ? 'badge-warn' : 'badge-ok');
+          badge.textContent =
+            flag === 'same_phone' ? '相同電話' :
+            flag === 'same_name' ? '同名' : flag;
+          tdFlags.appendChild(badge);
+          tdFlags.appendChild(document.createTextNode(' '));
+        });
+
+      const tdAction = document.createElement('td');
+      if (row.can_remove) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-danger btn-table';
+        btn.textContent = '剔除';
+        btn.addEventListener('click', function () {
+          removeWaitlistEntry(row.waitlist_no_raw, row.name, btn);
+        });
+        tdAction.appendChild(btn);
+      } else if (row.can_restore) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-secondary btn-table';
+        btn.textContent = '恢復';
+        btn.addEventListener('click', function () {
+          restoreWaitlistEntry(row.waitlist_no_raw, row.name, btn);
+        });
+        tdAction.appendChild(btn);
+      } else {
+        tdAction.className = 'muted';
+        tdAction.textContent = '-';
+      }
+
+      tr.appendChild(tdNo);
+      tr.appendChild(tdName);
+      tr.appendChild(tdPhone);
+      tr.appendChild(tdTime);
+      tr.appendChild(tdFlags);
+      tr.appendChild(tdAction);
+      tbody.appendChild(tr);
     }
 
     function removeWaitlistEntry(waitlistNo, name, button) {
@@ -886,11 +1192,11 @@
       )) return;
       UI.runWithLoading(button, '剔除中…', async () => {
         const res = await post('admin.removeWaitlistEntry', { waitlist_no: waitlistNo });
-        await loadDashboard();
         if (!res.ok) {
           UI.showToast(res.error?.message || '剔除失敗', 'error');
           return;
         }
+        applyMutationDashboard(res, { silent: true });
         UI.showToast('已剔除候補 ' + label, 'success');
       }, { overlay: true });
     }
@@ -900,21 +1206,28 @@
       if (!confirm('確定要恢復候補 ' + label + '？\n\n恢復後將重新納入抽選。')) return;
       UI.runWithLoading(button, '恢復中…', async () => {
         const res = await post('admin.restoreWaitlistEntry', { waitlist_no: waitlistNo });
-        await loadDashboard();
         if (!res.ok) {
           UI.showToast(res.error?.message || '恢復失敗', 'error');
           return;
         }
+        applyMutationDashboard(res, { silent: true });
         UI.showToast('已恢復候補 ' + label, 'success');
       }, { overlay: true });
     }
 
     function renderWaitlistTable(waitlist, publishedLookup) {
+      bindWaitlistControls();
       const tbody = document.getElementById('waitlist-body');
       tbody.innerHTML = '';
-      const rows = waitlist || [];
+      const allRows = waitlist || [];
+      const searchEl = document.getElementById('waitlist-search');
+      if (searchEl && searchEl.value !== waitlistSearchQuery) {
+        searchEl.value = waitlistSearchQuery;
+      }
 
-      if (rows.length === 0) {
+      updateWaitlistSectionChrome(allRows.length, getFilteredWaitlistRows(allRows).length);
+
+      if (allRows.length === 0) {
         const tr = document.createElement('tr');
         const td = document.createElement('td');
         td.colSpan = 6;
@@ -922,111 +1235,78 @@
         td.textContent = '尚無候補登記';
         tr.appendChild(td);
         tbody.appendChild(tr);
+        renderTablePagination('waitlist-pagination', { totalRows: 0, page: 1 });
         return;
       }
 
-      rows.forEach(row => {
+      const filtered = getFilteredWaitlistRows(allRows);
+      const totalPages = Math.max(1, Math.ceil(filtered.length / WAITLIST_PAGE_SIZE));
+      if (waitlistPage > totalPages) waitlistPage = totalPages;
+      const pageStart = (waitlistPage - 1) * WAITLIST_PAGE_SIZE;
+      const pageRows = filtered.slice(pageStart, pageStart + WAITLIST_PAGE_SIZE);
+
+      if (pageRows.length === 0) {
         const tr = document.createElement('tr');
-        if (row.is_excluded) tr.className = 'waitlist-row-excluded';
-        const published = publishedLookup && publishedLookup[String(row.waitlist_no_raw)];
-
-        const tdNo = document.createElement('td');
-        tdNo.textContent = row.waitlist_no || '';
-
-        const tdName = document.createElement('td');
-        tdName.textContent = row.name || '';
-
-        const tdPhone = document.createElement('td');
-        tdPhone.textContent = row.phone_masked || '';
-
-        const tdTime = document.createElement('td');
-        tdTime.textContent = row.registered_at || '';
-
-        const tdFlags = document.createElement('td');
-
-        if (row.is_excluded) {
-          const badge = document.createElement('span');
-          badge.className = 'badge badge-excluded';
-          badge.textContent = '已剔除';
-          tdFlags.appendChild(badge);
-          tdFlags.appendChild(document.createTextNode(' '));
-        }
-
-        if (published) {
-          const badge = document.createElement('span');
-          badge.className = 'badge badge-published';
-          badge.textContent = '已公布 順位' + published.random_rank;
-          tdFlags.appendChild(badge);
-          tdFlags.appendChild(document.createTextNode(' '));
-        }
-
-        (row.duplicate_flags || '')
-          .split(',')
-          .filter(Boolean)
-          .forEach(function (flag) {
-            const badge = document.createElement('span');
-
-            badge.className =
-              'badge ' +
-              (
-                flag === 'same_phone' || flag === 'same_name'
-                  ? 'badge-warn'
-                  : 'badge-ok'
-              );
-
-            badge.textContent =
-              flag === 'same_phone'
-                ? '相同電話'
-                : flag === 'same_name'
-                  ? '同名'
-                  : flag;
-
-            tdFlags.appendChild(badge);
-            tdFlags.appendChild(document.createTextNode(' '));
-          });
-
-        const tdAction = document.createElement('td');
-        if (row.can_remove) {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'btn btn-danger btn-table';
-          btn.textContent = '剔除';
-          btn.addEventListener('click', function () {
-            removeWaitlistEntry(row.waitlist_no_raw, row.name, btn);
-          });
-          tdAction.appendChild(btn);
-        } else if (row.can_restore) {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'btn btn-secondary btn-table';
-          btn.textContent = '恢復';
-          btn.addEventListener('click', function () {
-            restoreWaitlistEntry(row.waitlist_no_raw, row.name, btn);
-          });
-          tdAction.appendChild(btn);
-        } else {
-          tdAction.className = 'muted';
-          tdAction.textContent = '-';
-        }
-
-        tr.appendChild(tdNo);
-        tr.appendChild(tdName);
-        tr.appendChild(tdPhone);
-        tr.appendChild(tdTime);
-        tr.appendChild(tdFlags);
-        tr.appendChild(tdAction);
-
+        const td = document.createElement('td');
+        td.colSpan = 6;
+        td.className = 'table-empty muted';
+        td.textContent = '沒有符合條件的候補登記';
+        tr.appendChild(td);
         tbody.appendChild(tr);
+      } else {
+        pageRows.forEach(function (row) {
+          appendWaitlistTableRow(tbody, row, publishedLookup);
+        });
+      }
+
+      renderTablePagination('waitlist-pagination', {
+        totalRows: filtered.length,
+        page: waitlistPage,
+        onPageChange: function (nextPage) {
+          waitlistPage = nextPage;
+          renderWaitlistTable(
+            dashboard.waitlist,
+            buildPublishedLookup(dashboard.published_lottery)
+          );
+          const tableWrap = tbody.closest('.table-wrap');
+          if (tableWrap) {
+            tableWrap.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          }
+        }
       });
     }
 
-    async function refreshRegistrationStatus() {
+    async function refreshRegistrationStatus(options) {
+      const forceReload = !!(options && options.forceReload);
       const manageVisible = !document.getElementById('manage-section').classList.contains('hidden');
       if (!manageVisible || !dashboardReady) return;
+      if (statusPollInFlight) return;
+      statusPollInFlight = true;
       try {
-        await loadDashboard({ silent: true });
+        if (forceReload) {
+          await loadDashboard({ silent: true });
+          return;
+        }
+
+        const res = await postBackground('admin.getRegistrationStatus');
+        if (!res || !res.ok) return;
+
+        const nextSnapshot = snapshotRegistrationStatus(res.data);
+        const prevSnapshot = dashboard._pollSnapshot || null;
+
+        if (registrationStatusChanged(prevSnapshot, nextSnapshot)) {
+          applyRegistrationStatus(res.data);
+        }
+
+        dashboard._pollSnapshot = nextSnapshot;
+
+        if (waitlistDataChanged(prevSnapshot, nextSnapshot)) {
+          await loadDashboard({ silent: true });
+        }
       } catch (e) {
         // 背景輪詢失敗時不打擾操作
+      } finally {
+        statusPollInFlight = false;
       }
     }
 
@@ -1053,14 +1333,12 @@
           if (!silent) {
             hideDashboardLoading();
             if (res.error && res.error.code !== 'SESSION_EXPIRED') {
-              alert(res.error.message || '載入失敗');
+              UI.showToast(res.error.message || '載入失敗', 'error');
             }
           }
           return false;
         }
-        dashboard = res.data;
-        dashboardReady = true;
-        renderDashboard({ silent: silent });
+        applyDashboardData(res.data, { silent: silent });
         return true;
       } catch (err) {
         if (!silent) {
@@ -1087,6 +1365,7 @@
 
     function renderDashboard(options) {
       const silent = !!(options && options.silent);
+      const statusOnly = !!(options && options.statusOnly);
       if (!silent) {
         hideDashboardLoading();
       }
@@ -1106,6 +1385,11 @@
         display_mode: s.display_mode,
         waitlist_count: dashboard.waitlist_count
       });
+
+      if (statusOnly) {
+        return;
+      }
+
       document.getElementById('link-display').href = dashboard.urls.display;
       document.getElementById('link-candidate-dev').href = dashboard.urls.candidate;
 
@@ -1181,8 +1465,13 @@
       batchList.querySelectorAll('[data-batch]').forEach(btn => {
         btn.addEventListener('click', () => {
           UI.runWithLoading(btn, '切換中…', async () => {
-            await post('admin.setDisplayedBatch', { batch_id: btn.dataset.batch });
-            alert('已切換 Display 批次');
+            const res = await post('admin.setDisplayedBatch', { batch_id: btn.dataset.batch });
+            if (!res.ok) {
+              UI.showToast(res.error?.message || '切換失敗', 'error');
+              return;
+            }
+            applyMutationDashboard(res, { silent: true });
+            UI.showToast('已切換 Display 批次', 'success');
           });
         });
       });
@@ -1199,15 +1488,17 @@
           try {
             const res = await post('admin.setQuickState', { state: nextState });
             if (!res.ok) {
-              alert(res.error?.message || '切換失敗');
+              UI.showToast(res.error?.message || '切換失敗', 'error');
               return;
             }
             if (dashboard && res.data) {
               Object.assign(dashboard.settings, res.data);
             }
             applyRegistrationStatus(res.data);
+            syncPollSnapshotFromDashboard();
+            UI.showToast('已切換為「' + actionLabel + '」', 'success');
           } catch (err) {
-            alert((err && err.message) || '無法連線伺服器，請稍後再試');
+            UI.showToast((err && err.message) || '無法連線伺服器，請稍後再試', 'error');
           } finally {
             if (dashboardReady && !document.getElementById('manage-section').classList.contains('hidden')) {
               startStatusPolling();
@@ -1224,13 +1515,13 @@
       const reason = prompt('請填寫作廢原因（必填）：');
       if (reason === null) return;
       if (!reason.trim()) {
-        alert('請填寫作廢原因');
+        UI.showToast('請填寫作廢原因', 'error');
         return;
       }
       if (!confirm('再次確認：確定作廢抽選？\n原因：' + reason.trim())) return;
       UI.runWithOverlay('作廢中…', async () => {
         const res = await post('admin.voidLottery', { reason: reason.trim() });
-        await loadDashboard();
+        await refreshAfterMutation(res, { full: true });
         UI.showToast(
           res.ok ? (res.data?.message || '抽選已作廢') : (res.error?.message || '作廢失敗'),
           res.ok ? 'success' : 'error'
@@ -1257,7 +1548,7 @@
           document.getElementById('lottery-exclude').value = '';
           document.getElementById('lottery-include').value = '';
         }
-        await loadDashboard();
+        await refreshAfterMutation(res, { full: true });
         UI.showToast(res.ok ? '抽選完成' : (res.error?.message || '失敗'), res.ok ? 'success' : 'error');
       });
     });
@@ -1272,7 +1563,7 @@
         if (displayTitle) payload.display_title = displayTitle;
         const res = await post('admin.createPublishBatch', payload);
         if (res.ok) document.getElementById('next-batch-title').value = '';
-        await loadDashboard();
+        await refreshAfterMutation(res, { full: true });
         UI.showToast(res.ok ? '已建立下一批' : (res.error?.message || '失敗'), res.ok ? 'success' : 'error');
       });
     });
@@ -1282,7 +1573,7 @@
       if (btn.disabled) return;
       UI.runWithLoading(btn, '儲存中…', async () => {
         const cols = document.getElementById('set-results-columns').value;
-        await post('admin.updateSettings', { settings: {
+        const res = await post('admin.updateSettings', { settings: {
           lottery_sort_asc: document.getElementById('set-lottery-sort-asc').checked,
           show_random_rank: document.getElementById('set-show-random-rank').checked,
           show_page_number: document.getElementById('set-show-page-number').checked,
@@ -1291,8 +1582,12 @@
           carousel_seconds: Number(document.getElementById('set-carousel-seconds').value),
           lottery_first_batch_count: Number(document.getElementById('first-batch-count').value)
         }});
-        await loadDashboard();
-        alert('已儲存');
+        if (!res.ok) {
+          UI.showToast(res.error?.message || '儲存失敗', 'error');
+          return;
+        }
+        applyMutationDashboard(res, { silent: true });
+        UI.showToast('已儲存', 'success');
       });
     });
 
@@ -1318,13 +1613,13 @@
           deadline = timeLocalToDeadlineIso(deadlineTime);
 
           if (!deadline) {
-            alert('截止時間格式錯誤');
+            UI.showToast('截止時間格式錯誤', 'error');
             return;
           }
         }
 
         if (autoCloseDeadline && !deadline) {
-          alert('啟用自動關閉候補時，必須設定截止時間');
+          UI.showToast('啟用自動關閉候補時，必須設定截止時間', 'error');
           return;
         }
 
@@ -1354,13 +1649,12 @@
         });
 
         if (!res.ok) {
-          alert(res.error?.message || '儲存失敗');
+          UI.showToast(res.error?.message || '儲存失敗', 'error');
           return;
         }
 
-        await loadDashboard();
-
-        alert('已儲存');
+        applyMutationDashboard(res, { silent: true });
+        UI.showToast('已儲存', 'success');
       });
     });
 
@@ -1384,9 +1678,13 @@
         };
         const pin = document.getElementById('set-staff-pin').value;
         if (pin) settings.staff_pin = pin;
-        await post('admin.updateSettings', { settings });
-        await loadDashboard();
-        alert('已儲存');
+        const res = await post('admin.updateSettings', { settings });
+        if (!res.ok) {
+          UI.showToast(res.error?.message || '儲存失敗', 'error');
+          return;
+        }
+        applyMutationDashboard(res, { silent: true });
+        UI.showToast('已儲存', 'success');
       });
     });
 
@@ -1401,7 +1699,7 @@
               'success'
             );
           } else {
-            alert(res.error?.message || '匯出失敗');
+            UI.showToast(res.error?.message || '匯出失敗', 'error');
           }
         });
       });
@@ -1413,7 +1711,7 @@
       const eventName = document.getElementById('new-event-name').value.trim();
       const sessionName = document.getElementById('new-session-name').value.trim();
       if (!eventName) {
-        alert('請輸入活動名稱');
+        UI.showToast('請輸入活動名稱', 'error');
         return;
       }
       UI.runWithLoading(btn, '建立中…', async () => {
@@ -1422,10 +1720,11 @@
           session_name: sessionName
         });
         if (!res.ok) {
-          alert(res.error?.message || '建立失敗');
+          UI.showToast(res.error?.message || '建立失敗', 'error');
           return;
         }
-        await loadDashboard();
+        await refreshAfterMutation(res, { full: true });
+        UI.showToast('場次已建立', 'success');
       });
     });
 
@@ -1440,7 +1739,7 @@
       UI.runWithLoading(btn, '封存中…', async () => {
         const res = await post('admin.archiveEvent');
         if (!res.ok) {
-          alert(res.error?.message || '封存失敗');
+          UI.showToast(res.error?.message || '封存失敗', 'error');
           return;
         }
         if (res.data?.export_url) {
@@ -1449,7 +1748,8 @@
         let msg = '場次已備份並清空工作資料';
         if (res.data?.export_name) msg += '。備份：' + res.data.export_name;
         setDataMessage(msg, 'success');
-        await loadDashboard();
+        await refreshAfterMutation(res, { full: true });
+        UI.showToast(msg, 'success');
       });
     });
 
@@ -1475,13 +1775,15 @@
         };
         hideLoginAlert();
         showApp();
-        const loaded = await loadDashboard();
-        if (!loaded) {
+        const boot = await post('admin.bootstrap', { token: res.data.token });
+        if (!boot || !boot.ok || !boot.data.dashboard) {
           dashboardReady = false;
           showLogin();
           showLoginAlert('無法載入管理資料，請重新登入');
           return;
         }
+        session = boot.data.session;
+        applyDashboardData(boot.data.dashboard);
       } catch (err) {
         dashboardReady = false;
         showLogin();
@@ -1493,10 +1795,18 @@
     }
 
     async function doLogout() {
-      await post('admin.logout', { token: getAdminToken() });
+      stopStatusPolling();
+      try {
+        await post('admin.logout', { token: getAdminToken() });
+      } catch (e) {
+        // 登出失敗仍清本地狀態
+      }
       setAdminToken('');
       session = null;
-      location.reload();
+      dashboard = null;
+      dashboardReady = false;
+      hideDashboardLoading();
+      showLogin();
     }
 
     async function bootApp() {
@@ -1507,8 +1817,8 @@
           return;
         }
 
-        const res = await post('admin.checkSession', { token });
-        if (!res || !res.ok || !res.data.session) {
+        const res = await post('admin.bootstrap', { token });
+        if (!res || !res.ok || !res.data.session || !res.data.dashboard) {
           setAdminToken('');
           showLogin();
           if (res && res.error && res.error.message) showLoginAlert(res.error.message);
@@ -1517,12 +1827,7 @@
 
         session = res.data.session;
         showApp();
-        const loaded = await loadDashboard();
-        if (!loaded) {
-          dashboardReady = false;
-          showLogin();
-          showLoginAlert('無法載入管理資料，請重新登入');
-        }
+        applyDashboardData(res.data.dashboard);
       } catch (err) {
         dashboardReady = false;
         showLogin();

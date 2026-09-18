@@ -13,17 +13,19 @@
       <p id="display-subtitle" class="muted"></p>
       <p id="deadline-info" class="muted"></p>
       <p id="session-countdown" class="muted hidden"></p>
-      <p id="session-loading" class="muted">正在驗證 QR Code…</p>
-      <div class="field">
-        <label for="name">真實姓名</label>
-        <input id="name" type="text" autocomplete="name" placeholder="王小明">
+      <div id="session-loading" class="session-loading loading">正在驗證 QR Code…</div>
+      <div id="form-body" class="hidden">
+        <div class="field">
+          <label for="name">真實姓名</label>
+          <input id="name" type="text" autocomplete="name" placeholder="王小明">
+        </div>
+        <div class="field">
+          <label for="phone">手機號碼</label>
+          <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="0912345678">
+        </div>
+        <button class="btn btn-primary" id="btn-confirm" style="width:100%">確認資料</button>
+        <p id="form-error" class="muted" style="color:#f87171;margin-top:12px;"></p>
       </div>
-      <div class="field">
-        <label for="phone">手機號碼</label>
-        <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="0912345678">
-      </div>
-      <button class="btn btn-primary" id="btn-confirm" style="width:100%">確認資料</button>
-      <p id="form-error" class="muted" style="color:#f87171;margin-top:12px;"></p>
     </div>
 
     <div id="screen-review" class="card hidden">
@@ -134,6 +136,8 @@
     }
 
     function setFormEnabled(enabled) {
+      document.getElementById('form-body').classList.toggle('hidden', !enabled);
+      document.getElementById('session-loading').classList.toggle('hidden', enabled);
       document.getElementById('name').disabled = !enabled;
       document.getElementById('phone').disabled = !enabled;
       document.getElementById('btn-confirm').disabled = !enabled;
@@ -563,10 +567,11 @@
       } catch (e) {
         showError('連線失敗', e.message || '無法連線至伺服器，請重新掃描 QR Code');
       } finally {
-        document.getElementById('session-loading').classList.add('hidden');
         if (sessionReady) {
           setFormEnabled(true);
           syncCountdownDisplay();
+        } else {
+          document.getElementById('session-loading').classList.remove('hidden');
         }
       }
     }

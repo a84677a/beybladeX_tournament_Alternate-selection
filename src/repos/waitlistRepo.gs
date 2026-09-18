@@ -2,19 +2,37 @@ function getWaitlistSheet_() {
   return getSpreadsheet_().getSheetByName(CONFIG.SHEETS.WAITLIST);
 }
 
+var _waitlistIndexMemory_ = null;
+
 function getAllWaitlistRows_() {
   var sheet = getWaitlistSheet_();
-  var values = sheet.getDataRange().getValues();
-  if (values.length <= 1) return [];
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
 
-  var headers = values[0];
+  var values = sheet.getRange(2, 1, lastRow - 1, WAITLIST_HEADERS.length).getValues();
   var rows = [];
-  for (var i = 1; i < values.length; i++) {
-    rows.push(rowToObject_(headers, values[i]));
+  for (var i = 0; i < values.length; i++) {
+    rows.push(rowToObject_(WAITLIST_HEADERS, values[i]));
   }
   return rows.filter(function (row) {
     return row.status !== 'cancelled';
   });
+}
+
+function readWaitlistRowsForIndex_() {
+  var sheet = getWaitlistSheet_();
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+
+  var values = sheet.getRange(2, 1, lastRow - 1, WAITLIST_HEADERS.length).getValues();
+  var rows = [];
+  for (var i = 0; i < values.length; i++) {
+    var row = rowToObject_(WAITLIST_HEADERS, values[i]);
+    if (isWaitlistIndexed_(row)) {
+      rows.push(row);
+    }
+  }
+  return rows;
 }
 
 function isWaitlistIndexed_(row) {
@@ -97,11 +115,15 @@ function buildWaitlistIndexFromRows_(rows) {
 }
 
 function rebuildWaitlistIndex_() {
-  return buildWaitlistIndexFromRows_(getAllWaitlistRows_());
+  return buildWaitlistIndexFromRows_(readWaitlistRowsForIndex_());
 }
 
 function getWaitlistIndex_() {
-  return rebuildWaitlistIndex_();
+  if (_waitlistIndexMemory_) {
+    return _waitlistIndexMemory_;
+  }
+  _waitlistIndexMemory_ = rebuildWaitlistIndex_();
+  return _waitlistIndexMemory_;
 }
 
 function appendWaitlistIndexEntry_(row) {
@@ -111,6 +133,7 @@ function appendWaitlistIndexEntry_(row) {
 }
 
 function invalidateWaitlistIndex_() {
+  _waitlistIndexMemory_ = null;
   CacheService.getScriptCache().remove(getWaitlistIndexCacheKey_());
 }
 
@@ -223,26 +246,70 @@ function countActiveWaitlist_() {
   return count;
 }
 
+function getWaitlistStatusCountsCacheKey_() {
+  return CONFIG.CACHE_PREFIX + 'waitlist_status_counts';
+}
+
+function getWaitlistStatusCounts_() {
+  var cache = CacheService.getScriptCache();
+  var cacheKey = getWaitlistStatusCountsCacheKey_();
+  var cached = cache.get(cacheKey);
+  if (cached !== null) {
+    return JSON.parse(cached);
+  }
+
+  var sheet = getWaitlistSheet_();
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
+    var empty = { active: 0, excluded: 0 };
+    cache.put(cacheKey, JSON.stringify(empty), CONFIG.CACHE_TTL.WAITLIST_COUNT);
+    return empty;
+  }
+
+  var statusCol = WAITLIST_HEADERS.indexOf('status') + 1;
+  var statuses = sheet.getRange(2, statusCol, lastRow - 1, 1).getValues();
+  var active = 0;
+  var excluded = 0;
+  for (var i = 0; i < statuses.length; i++) {
+    var status = statuses[i][0];
+    if (status === 'active') active++;
+    else if (status === 'excluded') excluded++;
+  }
+
+  var counts = { active: active, excluded: excluded };
+  cache.put(cacheKey, JSON.stringify(counts), CONFIG.CACHE_TTL.WAITLIST_COUNT);
+  return counts;
+}
+
 function invalidateWaitlistCountCache_() {
-  CacheService.getScriptCache().remove(CONFIG.CACHE_PREFIX + 'waitlist_count');
+  var cache = CacheService.getScriptCache();
+  cache.remove(CONFIG.CACHE_PREFIX + 'waitlist_count');
+  cache.remove(getWaitlistStatusCountsCacheKey_());
 }
 
 function findWaitlistSheetRow_(waitlistNo) {
   var sheet = getWaitlistSheet_();
-  var values = sheet.getDataRange().getValues();
-  if (values.length <= 1) return null;
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return null;
 
-  var headers = values[0];
-  var waitlistNoCol = headers.indexOf('waitlist_no');
-  var statusCol = headers.indexOf('status');
-  if (waitlistNoCol === -1 || statusCol === -1) return null;
+  var waitlistNoCol = WAITLIST_HEADERS.indexOf('waitlist_no') + 1;
+  var statusCol = WAITLIST_HEADERS.indexOf('status') + 1;
+  var targetNo = Number(waitlistNo);
+  var nos = sheet.getRange(2, waitlistNoCol, lastRow - 1, 1).getValues();
 
-  for (var i = 1; i < values.length; i++) {
-    if (Number(values[i][waitlistNoCol]) === Number(waitlistNo)) {
+  for (var i = 0; i < nos.length; i++) {
+    if (Number(nos[i][0]) === targetNo) {
+      var rowIndex = i + 2;
+      var rowValues = sheet.getRange(
+        rowIndex,
+        1,
+        rowIndex,
+        WAITLIST_HEADERS.length
+      ).getValues()[0];
       return {
-        rowIndex: i + 1,
-        statusCol: statusCol + 1,
-        row: rowToObject_(headers, values[i])
+        rowIndex: rowIndex,
+        statusCol: statusCol,
+        row: rowToObject_(WAITLIST_HEADERS, rowValues)
       };
     }
   }

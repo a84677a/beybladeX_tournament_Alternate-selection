@@ -190,6 +190,28 @@ function adminCheckSession_(token) {
   });
 }
 
+function adminBootstrap_(token) {
+  var session = getAdminSession_(token);
+  if (!session || session.role !== ADMIN_ROLE) {
+    return error_('SESSION_EXPIRED', 'Session 已失效，請重新登入');
+  }
+
+  CacheService.getScriptCache().put(
+    ADMIN_SESSION_PREFIX + token,
+    JSON.stringify(session),
+    getAdminSessionTtlSeconds_()
+  );
+
+  return success_({
+    session: {
+      role: session.role,
+      operator: session.operator,
+      expiresAt: session.expiresAt
+    },
+    dashboard: buildAdminDashboardData_()
+  });
+}
+
 function requireAdmin_() {
   var token = _adminAuthToken_;
   var session = getAdminSession_(token);

@@ -305,7 +305,7 @@ function removeWaitlistEntry_(waitlistNo) {
     name: found.row.name
   });
 
-  return success_({
+  return attachAdminDashboard_({
     waitlist_no: formatWaitlistNo_(waitlistNo),
     message: '已剔除候補 ' + formatWaitlistNo_(waitlistNo) + '（登記者不會收到通知）'
   });
@@ -337,7 +337,7 @@ function restoreWaitlistEntry_(waitlistNo) {
     name: found.row.name
   });
 
-  return success_({
+  return attachAdminDashboard_({
     waitlist_no: formatWaitlistNo_(waitlistNo),
     message: '已恢復候補 ' + formatWaitlistNo_(waitlistNo)
   });
