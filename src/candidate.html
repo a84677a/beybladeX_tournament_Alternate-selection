@@ -402,9 +402,10 @@
       await refreshFormSession();
     }
 
-    document.getElementById('btn-confirm').addEventListener('click', async () => {
+    document.getElementById('btn-confirm').addEventListener('click', () => {
+      const btn = document.getElementById('btn-confirm');
       document.getElementById('form-error').textContent = '';
-      try {
+      UI.runWithLoading(btn, '確認中…', async () => {
         if (!sessionReady) {
           throw new Error('QR 驗證尚未完成，請稍候');
         }
@@ -414,9 +415,9 @@
         document.getElementById('review-phone').textContent = pending.phone;
         document.getElementById('review-error').textContent = '';
         show('screen-review');
-      } catch (e) {
-        document.getElementById('form-error').textContent = e.message;
-      }
+      }).catch(function (e) {
+        document.getElementById('form-error').textContent = e.message || '無法進入確認畫面';
+      });
     });
 
     document.getElementById('btn-back').addEventListener('click', () => {
@@ -429,13 +430,13 @@
       const btn = document.getElementById('btn-submit');
       if (!pending || btn.disabled) return;
       if (mode === 'counter') {
-        UI.runWithLoading(btn, '鎖定資料中…', () => enterPinStage())
+        UI.runWithOverlay('鎖定資料中…', () => enterPinStage())
           .catch(e => {
             document.getElementById('review-error').textContent = e.message || '無法進入 PIN 核驗';
           });
         return;
       }
-      UI.runWithLoading(btn, '登記中…', () => submitRegistration(null))
+      UI.runWithOverlay('登記中…', () => submitRegistration(null))
         .catch(e => {
           document.getElementById('review-error').textContent = e.message || '登記失敗，請稍後再試';
         });
@@ -497,7 +498,7 @@
       const btn = document.getElementById('btn-pin-submit');
       if (btn.disabled) return;
       const pin = document.getElementById('staff-pin').value;
-      UI.runWithLoading(btn, '登記中…', () => submitRegistration(pin))
+      UI.runWithOverlay('登記中…', () => submitRegistration(pin))
         .catch(e => {
           document.getElementById('pin-error').textContent = e.message || '登記失敗，請稍後再試';
         });

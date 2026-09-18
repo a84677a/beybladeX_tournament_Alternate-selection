@@ -150,6 +150,62 @@
     pointer-events: none;
   }
 
+  .app-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(15, 23, 42, 0.72);
+    backdrop-filter: blur(2px);
+  }
+
+  .app-overlay-box {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 18px 22px;
+    border-radius: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+    font-weight: 600;
+  }
+
+  .app-overlay-box .btn-spinner {
+    width: 18px;
+    height: 18px;
+    margin-right: 0;
+  }
+
+  .app-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 28px;
+    transform: translateX(-50%);
+    z-index: 1001;
+    max-width: min(92vw, 420px);
+    padding: 14px 18px;
+    border-radius: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    text-align: center;
+    font-weight: 600;
+  }
+
+  .app-toast-success {
+    border-color: var(--success);
+    color: var(--success);
+  }
+
+  .app-toast-error {
+    border-color: var(--danger);
+    color: #fca5a5;
+  }
+
   .field { margin-bottom: 16px; }
   .field label { display: block; margin-bottom: 8px; font-weight: 600; }
   .field-switch {

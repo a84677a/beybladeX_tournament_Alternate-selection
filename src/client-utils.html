@@ -1,34 +1,116 @@
 <script>
   window.WaitlistUI = (function () {
+    var toastTimer = null;
+    var overlayDepth = 0;
+
+    function ensureOverlayEl() {
+      var el = document.getElementById('app-overlay');
+      if (el) return el;
+      el = document.createElement('div');
+      el.id = 'app-overlay';
+      el.className = 'app-overlay hidden';
+      el.setAttribute('aria-hidden', 'true');
+      el.innerHTML =
+        '<div class="app-overlay-box" role="status">' +
+          '<span class="btn-spinner" aria-hidden="true"></span>' +
+          '<span id="app-overlay-text">處理中…</span>' +
+        '</div>';
+      document.body.appendChild(el);
+      return el;
+    }
+
+    function ensureToastEl() {
+      var el = document.getElementById('app-toast');
+      if (el) return el;
+      el = document.createElement('div');
+      el.id = 'app-toast';
+      el.className = 'app-toast hidden';
+      el.setAttribute('role', 'status');
+      el.setAttribute('aria-live', 'polite');
+      document.body.appendChild(el);
+      return el;
+    }
+
+    function showOverlay(text) {
+      var el = ensureOverlayEl();
+      var textEl = document.getElementById('app-overlay-text');
+      if (textEl) textEl.textContent = text || '處理中…';
+      overlayDepth += 1;
+      el.classList.remove('hidden');
+      el.setAttribute('aria-hidden', 'false');
+    }
+
+    function hideOverlay() {
+      if (overlayDepth <= 0) return;
+      overlayDepth -= 1;
+      if (overlayDepth > 0) return;
+      var el = document.getElementById('app-overlay');
+      if (!el) return;
+      el.classList.add('hidden');
+      el.setAttribute('aria-hidden', 'true');
+    }
+
+    function showToast(message, type, durationMs) {
+      var el = ensureToastEl();
+      if (toastTimer) {
+        clearTimeout(toastTimer);
+        toastTimer = null;
+      }
+      el.textContent = message || '';
+      el.className = 'app-toast app-toast-' + (type || 'info');
+      el.classList.remove('hidden');
+      toastTimer = setTimeout(function () {
+        el.classList.add('hidden');
+        toastTimer = null;
+      }, durationMs || 3200);
+    }
+
     function setButtonLoading(button, loading, loadingText) {
       if (!button) return;
       if (loading) {
-        if (button.disabled && button.classList.contains('is-loading')) return;
+        if (button.classList.contains('is-loading')) return;
         if (!button.dataset.originalHtml) {
           button.dataset.originalHtml = button.innerHTML;
         }
+        button.dataset.loadingWasDisabled = button.disabled ? '1' : '0';
         button.disabled = true;
         button.classList.add('is-loading');
         button.innerHTML =
           '<span class="btn-spinner" aria-hidden="true"></span>' +
           (loadingText || '處理中…');
       } else {
-        button.disabled = false;
         button.classList.remove('is-loading');
         if (button.dataset.originalHtml) {
           button.innerHTML = button.dataset.originalHtml;
           delete button.dataset.originalHtml;
         }
+        if (button.dataset.loadingWasDisabled !== undefined) {
+          button.disabled = button.dataset.loadingWasDisabled === '1';
+          delete button.dataset.loadingWasDisabled;
+        }
       }
     }
 
-    function runWithLoading(button, loadingText, task) {
+    function runWithLoading(button, loadingText, task, options) {
+      options = options || {};
       if (!button || button.disabled) return Promise.resolve();
+      var useOverlay = options.overlay === true;
       setButtonLoading(button, true, loadingText);
+      if (useOverlay) showOverlay(loadingText);
       return Promise.resolve()
         .then(task)
         .finally(function () {
           setButtonLoading(button, false);
+          if (useOverlay) hideOverlay();
+        });
+    }
+
+    function runWithOverlay(loadingText, task) {
+      showOverlay(loadingText);
+      return Promise.resolve()
+        .then(task)
+        .finally(function () {
+          hideOverlay();
         });
     }
 
@@ -75,6 +157,8 @@
     return {
       setButtonLoading: setButtonLoading,
       runWithLoading: runWithLoading,
+      runWithOverlay: runWithOverlay,
+      showToast: showToast,
       sleep: sleep,
       postWithRetry: postWithRetry
     };

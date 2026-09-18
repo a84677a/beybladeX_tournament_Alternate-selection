@@ -886,12 +886,13 @@
       )) return;
       UI.runWithLoading(button, '剔除中…', async () => {
         const res = await post('admin.removeWaitlistEntry', { waitlist_no: waitlistNo });
+        await loadDashboard();
         if (!res.ok) {
-          alert(res.error?.message || '剔除失敗');
+          UI.showToast(res.error?.message || '剔除失敗', 'error');
           return;
         }
-        await loadDashboard();
-      });
+        UI.showToast('已剔除候補 ' + label, 'success');
+      }, { overlay: true });
     }
 
     function restoreWaitlistEntry(waitlistNo, name, button) {
@@ -899,12 +900,13 @@
       if (!confirm('確定要恢復候補 ' + label + '？\n\n恢復後將重新納入抽選。')) return;
       UI.runWithLoading(button, '恢復中…', async () => {
         const res = await post('admin.restoreWaitlistEntry', { waitlist_no: waitlistNo });
+        await loadDashboard();
         if (!res.ok) {
-          alert(res.error?.message || '恢復失敗');
+          UI.showToast(res.error?.message || '恢復失敗', 'error');
           return;
         }
-        await loadDashboard();
-      });
+        UI.showToast('已恢復候補 ' + label, 'success');
+      }, { overlay: true });
     }
 
     function renderWaitlistTable(waitlist, publishedLookup) {
@@ -1226,10 +1228,13 @@
         return;
       }
       if (!confirm('再次確認：確定作廢抽選？\n原因：' + reason.trim())) return;
-      UI.runWithLoading(btn, '作廢中…', async () => {
+      UI.runWithOverlay('作廢中…', async () => {
         const res = await post('admin.voidLottery', { reason: reason.trim() });
-        alert(res.ok ? (res.data?.message || '抽選已作廢') : (res.error?.message || '作廢失敗'));
         await loadDashboard();
+        UI.showToast(
+          res.ok ? (res.data?.message || '抽選已作廢') : (res.error?.message || '作廢失敗'),
+          res.ok ? 'success' : 'error'
+        );
       });
     });
 
@@ -1242,33 +1247,33 @@
       if (exclude.length) confirmMsg += '\n\n排除序號：' + exclude.join(', ');
       if (include.length) confirmMsg += '\n必中首輪：' + include.join(', ');
       if (!confirm(confirmMsg)) return;
-      UI.runWithLoading(btn, '抽選中…', async () => {
+      UI.runWithOverlay('抽選中…', async () => {
         const count = Number(document.getElementById('first-batch-count').value);
         const res = await post('admin.runInitialLottery', {
           first_batch_count: count,
           advanced_rules: { exclude, include }
         });
-        alert(res.ok ? '抽選完成' : (res.error?.message || '失敗'));
         if (res.ok) {
           document.getElementById('lottery-exclude').value = '';
           document.getElementById('lottery-include').value = '';
         }
         await loadDashboard();
+        UI.showToast(res.ok ? '抽選完成' : (res.error?.message || '失敗'), res.ok ? 'success' : 'error');
       });
     });
 
     document.getElementById('btn-add-batch').addEventListener('click', () => {
       const btn = document.getElementById('btn-add-batch');
       if (btn.disabled) return;
-      UI.runWithLoading(btn, '建立中…', async () => {
+      UI.runWithOverlay('建立中…', async () => {
         const count = Number(document.getElementById('next-batch-count').value);
         const displayTitle = document.getElementById('next-batch-title').value.trim();
         const payload = { count };
         if (displayTitle) payload.display_title = displayTitle;
         const res = await post('admin.createPublishBatch', payload);
-        alert(res.ok ? '已建立下一批' : (res.error?.message || '失敗'));
         if (res.ok) document.getElementById('next-batch-title').value = '';
         await loadDashboard();
+        UI.showToast(res.ok ? '已建立下一批' : (res.error?.message || '失敗'), res.ok ? 'success' : 'error');
       });
     });
 
@@ -1483,6 +1488,7 @@
         showLoginAlert((err && err.message) || '無法連線伺服器，請確認已部署 Web App 並重新整理');
       } finally {
         UI.setButtonLoading(btn, false);
+        btn.disabled = false;
       }
     }
 
